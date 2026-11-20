@@ -198,6 +198,7 @@ class BatteryAnalyticsEngineTest {
         )
         val session = BatteryAnalyticsEngine.summarize(samples).recentDischargeSessions.single()
         assertEquals(2 * 60L * 60L * 1000L, session.durationMillis)
+        // Each interval is attributed to the screen state observed at its start.
         assertEquals(1 * 60L * 60L * 1000L, session.observedScreenOnMillis)
         assertEquals(1 * 60L * 60L * 1000L, session.observedScreenOffMillis)
     }

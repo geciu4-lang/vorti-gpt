@@ -374,8 +374,16 @@ object BatteryAnalyticsEngine {
                 active.zipWithNext().forEach { (before, after) ->
                     val elapsed = after.capturedAtEpochMillis - before.capturedAtEpochMillis
                     if (elapsed !in 0L..MAX_DRAIN_INTERVAL_MILLIS) return@forEach
-                    if (before.screenInteractive == true && after.screenInteractive == true) screenOnMillis += elapsed
-                    if (before.screenInteractive == false && after.screenInteractive == false) screenOffMillis += elapsed
+
+                    // A snapshot records the screen state at its own timestamp. Attribute the
+                    // following observed interval to that starting state. Requiring the next
+                    // snapshot to have the same state would discard every interval containing
+                    // a screen transition, even though its starting state is known.
+                    when (before.screenInteractive) {
+                        true -> screenOnMillis += elapsed
+                        false -> screenOffMillis += elapsed
+                        null -> Unit // Unknown state must not be guessed.
+                    }
                 }
                 result += DischargeSessionInsight(
                     startedAtEpochMillis = first.capturedAtEpochMillis,
