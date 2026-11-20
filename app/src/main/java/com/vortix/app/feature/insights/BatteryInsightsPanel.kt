@@ -5,10 +5,14 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -24,9 +28,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortix.app.domain.model.EvidenceConfidence
@@ -90,11 +96,79 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                MetricLine(
+                    "Tasarım kapasitesi",
+                    capacity.designCapacityMicroAh?.let { "${formatMah(it / 1000.0)} mAh" } ?: "Ayarlanmadı"
+                )
+                MetricLine(
+                    "Tahmin yayılımı",
+                    capacity.relativeSpreadPercent?.let { String.format(Locale.getDefault(), "%.1f%%", it) } ?: "Yeterli veri yok"
+                )
+                val latestBatterySample = state.history.maxByOrNull { it.capturedAtEpochMillis }
+                MetricLine("Döngü sayısı", latestBatterySample?.cycleCount?.toString() ?: "Cihaz tarafından sunulmuyor")
+                MetricLine(
+                    "Android pil durumu",
+                    latestBatterySample?.health?.let { health ->
+                        when (health.name) {
+                            "GOOD" -> "Normal"
+                            "OVERHEAT" -> "Aşırı sıcak"
+                            "DEAD" -> "Pil arızalı"
+                            "OVER_VOLTAGE" -> "Aşırı voltaj"
+                            "UNSPECIFIED_FAILURE" -> "Belirtilmeyen hata"
+                            "COLD" -> "Çok soğuk"
+                            else -> "Bilinmiyor"
+                        }
+                    } ?: "Sunulmadı"
+                )
                 if (capacity.healthPercent == null) {
                     Text(
                         "Sağlık yüzdesi, yeterli ölçüm güveni oluşmadan gösterilmez.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+
+            InsightCard(title = "Şarj geçmişi · Oturum grafiği") {
+                val chargeGains = summary.recentChargeSessions
+                    .asReversed()
+                    .takeLast(6)
+                    .mapNotNull { session ->
+                        val start = session.startLevelPercent ?: return@mapNotNull null
+                        val end = session.endLevelPercent ?: return@mapNotNull null
+                        (end - start).takeIf { it > 0 }
+                    }
+                if (chargeGains.isEmpty()) {
+                    Text("Grafik için henüz yeterli şarj yüzdesi ölçümü yok.", style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    val maxGain = chargeGains.maxOrNull()?.coerceAtLeast(1) ?: 1
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(116.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        chargeGains.forEachIndexed { index, gain ->
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Bottom
+                            ) {
+                                Text("+$gain%", style = MaterialTheme.typography.labelSmall)
+                                Box(
+                                    modifier = Modifier
+                                        .width(20.dp)
+                                        .height((gain.toFloat() / maxGain.toFloat()).coerceIn(0.08f, 1f) * 76.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MaterialTheme.colorScheme.primary)
+                                )
+                                Text("${index + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    Text(
+                        "Sütunlar kaydedilen oturumların gerçek pil yüzdesi artışını gösterir; eksik ölçümler tahmin edilmez.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
