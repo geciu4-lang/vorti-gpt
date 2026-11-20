@@ -41,3 +41,21 @@ Run on a machine or CI runner with Android SDK Platform 37 and Build Tools 37.0.
 ```
 
 A successful CI build is necessary but not sufficient for release approval; representative physical-device checks remain mandatory.
+
+## AGP 9 built-in Kotlin migration (follow-up revision)
+
+The previous archive still applied `org.jetbrains.kotlin.android` while using AGP 9.3.1. That plugin is redundant/incompatible with AGP 9 built-in Kotlin and caused the reported configuration failure. This revision:
+
+- Removes `alias(libs.plugins.kotlin.android)` from the app and root plugin blocks.
+- Removes the `kotlin-android` plugin alias from `gradle/libs.versions.toml`.
+- Removes the `android.builtInKotlin=false` and `android.newDsl=false` opt-out flags from `gradle.properties` so AGP 9 defaults are active.
+- Keeps `org.jetbrains.kotlin.plugin.compose`; it is the Compose compiler plugin, not the removed Android Kotlin plugin. Its version remains aligned to Kotlin 2.4.21.
+- Keeps KSP 2.3.12 and Hilt 2.60.1, which meet the current Android AGP 9 migration skill's minimum versions (KSP 2.3.6+, Hilt 2.59.2+).
+
+Static follow-up checks:
+
+- Confirmed there are no remaining `kotlin.android`, `kotlin-android`, `android.builtInKotlin`, or `android.newDsl` references in Gradle build files, properties, or the version catalog.
+- Confirmed the wrapper is Gradle 9.6.1; this satisfies AGP 9.3's Gradle 9.5 minimum and remains within Kotlin 2.4.21's supported Gradle range.
+- Confirmed the app continues to configure JVM target 17 using `kotlin.compilerOptions`.
+
+Not verified in this environment: Gradle configuration, Android Studio sync, Kotlin/Compose compilation, KSP/Hilt/Room code generation, unit tests, APK assembly or device execution. The Android SDK is not installed here. The next required user-side checks remain `:app:testDebugUnitTest` and `:app:assembleDebug`.
