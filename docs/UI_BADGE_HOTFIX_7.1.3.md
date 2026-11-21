@@ -28,3 +28,5 @@ The project owner reported that `:app:testDebugUnitTest` and `:app:assembleDebug
 1. At 33.6°C with Android `THERMAL_NONE`, no low-battery/charge-target alert and a thermal threshold above 33.6°C, show the green `NORMAL` badge.
 2. Check widths around 320dp and larger: badge text must remain on one line; thermal text may ellipsize, never force the badge to wrap.
 3. Verify `MODERATE+`, configured temperature threshold, low-battery threshold and reached charge target still show red `UYARI`.
+
+> **Superseded by VORTIX 7.1.4.** The 7.1.3 alert rule set and badge sizing were further tightened after the user's Pixel 5/API 30 video found that the badge could still wrap and a normal 24°C/THERMAL_NONE state could remain red. In 7.1.4, only explicit thermal throttling MODERATE–SHUTDOWN, enabled high-temperature threshold, or enabled low-battery threshold while discharging produce the red badge. Reaching the charge target and stale OEM battery-health flags do not.

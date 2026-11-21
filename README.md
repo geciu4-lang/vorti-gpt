@@ -1,4 +1,4 @@
-# VORTIX 7.1.3 — Dashboard badge UI hotfix
+# VORTIX 7.1.4 — UI reference parity & badge hotfix
 
 VORTIX is an on-device Android battery monitoring and analysis application built with Kotlin, Jetpack Compose, Material 3, MVVM and Clean Architecture. This archive is a **working source candidate**, not a release-certified build.
 
@@ -35,7 +35,7 @@ VORTIX is an on-device Android battery monitoring and analysis application built
 | JVM target | 17 |
 | Application ID | `com.vortix.app` |
 | Shizuku API / Provider | 13.1.5 (optional advanced diagnostics) |
-| Version | `7.1.3` (`versionCode` 19) |
+| Version | `7.1.4` (`versionCode` 20) |
 
 The app module uses AGP 9 built-in Kotlin; the external `org.jetbrains.kotlin.android` plugin is not applied. The Compose compiler plugin remains pinned to the same Kotlin version.
 
@@ -72,14 +72,26 @@ GitHub Actions runs the unit tests and creates a Debug APK artifact on pushes to
 
 ## Release gate
 
-This 7.1.3 hotfix is based on the user-reported, CI- and Pixel 5/API 30-validated 7.1.2 UI integration and retains its thermal, Shizuku, webhook, charger-profile and telemetry features. The 7.1.3 changes are limited to the dashboard header layout and alert evaluation. The full Gradle test task, Kotlin/Compose compilation, KSP/Hilt/Room generation, APK assembly and Firebase Test Lab run have **not** been completed for this exact 7.1.3 revision because the Gradle wrapper distribution could not be downloaded in the current environment. Eleven `BatteryAlertEvaluatorTest` methods compiled and passed through a local JUnit4-API-compatible stub runner; a separate Kotlin/JVM smoke harness passed 7/7 alert/thermal assertions. Do not publish this candidate until GitHub Actions succeeds and representative device tests pass. See `docs/UI_BADGE_HOTFIX_7.1.3.md`, `docs/UI_INTEGRATION_7.1.2.md`, `docs/FEATURES_7.1.0.md`, `BUILD_VALIDATION.md`, `docs/VIDEO_REMEDIATION_REPORT.md`, `docs/DRAIN_RADAR_0.3.2_WAKELOCK_NOTES.md` and `docs/SHIZUKU_SETUP.md`.
+This 7.1.4 patch is based on the user-reported, CI- and Pixel 5/API 30-validated 7.1.2 UI integration and the subsequent 7.1.3 badge hotfix. It preserves the existing thermal, Shizuku, webhook, charger-profile, telemetry and Radar features. The three user-provided UI reference screenshots are included under `docs/ui-reference/` and used to keep the Overview, Controls and Radar layout consistent.
+
+For 7.1.4, `BatteryAlertEvaluatorTest` contains 15 targeted cases. All 15 passed using a local JUnit4-API-compatible stub runner; a separate Kotlin/JVM smoke harness passed 6/6 alert-rule assertions. The Gradle wrapper test task was attempted, but Gradle 9.6.1 could not bootstrap because DNS resolution for `services.gradle.org` failed. Therefore Compose/Android compilation, the complete test suite, APK assembly and Firebase Test Lab for this exact 7.1.4 revision remain unverified. The user-reported 7.1.2 CI and Pixel 5/API 30 results remain the previous device-validated baseline only. Do not publish this candidate until GitHub Actions succeeds and the badge states are rechecked on device.
+
+## VORTIX 7.1.4 — UI reference and badge corrections
+
+- The dashboard title block explicitly uses `Modifier.weight(1f).widthIn(min = 0.dp)`; the right-side badge reserves 88–104 dp and its label uses `wrapContentWidth()`, `maxLines = 1`, `softWrap = false` and ellipsis overflow.
+- Long thermal/wear text stays on one ellipsized line; the optional active-alert reason appears on a separate line below the header.
+- The red `UYARI` badge is shown only for a measured battery temperature at/above the enabled thermal threshold, a discharging battery below the enabled low-battery threshold, or Android system thermal status `MODERATE` through `SHUTDOWN`. `NONE` and `LIGHT` are not warnings.
+- Charge-target completion and stale OEM `BATTERY_HEALTH_OVERHEAT` flags do not independently trigger the red badge. Invalid persisted threshold values are clamped to the controls' supported ranges (36–48°C and 10–40%).
+- Added two regression tests for stale threshold values and out-of-range thermal status. Existing 7.1.3 UI structure is retained; reference screenshots are bundled under `docs/ui-reference/`.
+- The original `.github/workflows/build.yml`, AIDL `void destroy();` declaration, and `UsageAccessSettingsLauncher` import remain unchanged.
+- Local targeted tests: 15/15 passed with a JUnit4-API-compatible stub runner; Kotlin/JVM alert smoke checks: 6/6 passed. Gradle 9.6.1 could not be downloaded in this environment because `services.gradle.org` DNS resolution failed; full Android/Compose compilation, full suite, APK and Firebase tests for this exact patch remain unverified. See `docs/UI_REFERENCE_PARITY_7.1.4.md`.
 
 
-## VORTIX 7.1.3 — thermal badge layout hotfix
+## VORTIX 7.1.5 — Dark Frosted Glass Integration
 
-- The dashboard title block now uses `Modifier.weight(1f)` so it yields horizontal space to the status badge.
-- Thermal/wear copy and the right-side status label use `maxLines = 1`, `softWrap = false` and ellipsis overflow; the badge cannot break into vertically stacked letters. Alert reasons render below the title row instead of squeezing the badge.
-- `BatteryAlertEvaluator` trusts a valid reported battery temperature and Android thermal status when available. An OEM `BATTERY_HEALTH_OVERHEAT` flag by itself no longer leaves a red badge after the reported temperature has fallen below the configured threshold; it remains a fallback warning when temperature is unavailable. Other active alert conditions (MODERATE+ thermal status, configured temperature threshold, low-battery threshold and reached charge target) remain intact.
-- Added targeted JUnit cases for 33.6°C + `THERMAL_NONE`, the missing-temperature overheat fallback and existing alert triggers.
-- The source ZIP, AIDL declaration, `UsageAccessSettingsLauncher` import and `.github/workflows/build.yml` are retained. Version is 7.1.3 / versionCode 19.
-- Local Kotlin/JVM alert-rule smoke checks: 7/7 passed. The Gradle wrapper test task was attempted but could not bootstrap Gradle 9.6.1 because `services.gradle.org` DNS resolution failed. Android/Compose compilation, the full JUnit suite, APK assembly and Firebase execution for this exact 7.1.3 source remain unverified. The user-reported 7.1.2 CI and Pixel 5/API 30 results are the previous validated baseline only.
+- Entegre edilen koyu obsidyen, ambient mesh ve specular kenarlı Dark Frosted Glass tasarım sistemi.
+- Özet, Kontrol ve Radar sekmeleri mevcut ViewModel state ve aksiyonlarını koruyarak cam yüzeyler ve pill etkileşimleriyle yeniden stillendi.
+- Webhook GET/POST seçimi ve Test Et aksiyonu sürekli görünür hâle getirildi.
+- Rozet tek satır sınırlandırıldı; gerçek anomali yokken NORMAL durumu yeşil gösterilir.
+- Önceki Hilt, Room/migration, Shizuku/AIDL, WorkManager ve GitHub Actions akışları korunmuştur.
+- Android derlemesi ve tüm Gradle testleri teslim anında çalıştırılamadı; doğrulama durumu teknik raporda açıklanmıştır.

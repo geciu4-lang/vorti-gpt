@@ -1,49 +1,42 @@
 package com.vortix.app.domain.analytics
 
-import com.vortix.app.domain.model.BatteryHealth
 import com.vortix.app.domain.model.BatterySnapshot
 import com.vortix.app.domain.model.BatteryStatus
-import com.vortix.app.domain.model.PluggedSource
 
-/** Pure alert rules shared by the dashboard and its unit tests. */
+/**
+ * Only genuine battery/thermal anomalies turn the dashboard status badge red.
+ * Charge-target completion is an expected user-configured event, not an anomaly.
+ */
 object BatteryAlertEvaluator {
-    /** Returns user-readable causes so a warning is never an unexplained permanent badge. */
     fun activeAlertReasons(
         snapshot: BatterySnapshot?,
         thermalAlertEnabled: Boolean,
         thermalThresholdCelsius: Int,
         lowBatteryAlertEnabled: Boolean,
-        lowBatteryThresholdPercent: Int,
-        chargeLimitEnabled: Boolean,
-        chargeTargetPercent: Int
+        lowBatteryThresholdPercent: Int
     ): List<String> {
         snapshot ?: return emptyList()
         val temperature = snapshot.temperatureCelsius
         val level = snapshot.levelPercent
-        val charging = snapshot.status == BatteryStatus.CHARGING || snapshot.status == BatteryStatus.FULL
-        val plugged = snapshot.pluggedSource != PluggedSource.NONE &&
-            snapshot.pluggedSource != PluggedSource.UNKNOWN
+
         return buildList {
-            // Some OEM battery intents can keep BATTERY_HEALTH_OVERHEAT latched briefly
-            // after the reported cell temperature has returned to a normal range. Prefer
-            // the measured temperature and Android thermal-status signal when available;
-            // retain the platform-health fallback only when no temperature was supplied.
-            if (snapshot.health == BatteryHealth.OVERHEAT && temperature == null) {
-                add("Android pil sağlık durumu aşırı sıcak bildiriyor (sıcaklık ölçümü yok)")
-            }
             if (SystemThermalStatus.isWarning(snapshot.thermalStatus)) {
                 add("Sistem termal durumu ${SystemThermalStatus.label(snapshot.thermalStatus)}")
             }
-            if (thermalAlertEnabled && temperature != null && temperature >= thermalThresholdCelsius) {
-                add("Pil sıcaklığı ${temperature.toInt()}°C (eşik ${thermalThresholdCelsius}°C)")
+            // Match the controls' supported ranges so corrupted/stale DataStore values
+            // cannot turn a normal 24°C battery into a permanent warning.
+            val safeThermalThreshold = thermalThresholdCelsius.coerceIn(36, 48)
+            val safeLowBatteryThreshold = lowBatteryThresholdPercent.coerceIn(10, 40)
+
+            if (thermalAlertEnabled && temperature != null && temperature.isFinite() &&
+                temperature >= safeThermalThreshold
+            ) {
+                add("Pil sıcaklığı ${temperature.toInt()}°C (eşik ${safeThermalThreshold}°C)")
             }
             if (lowBatteryAlertEnabled && snapshot.status == BatteryStatus.DISCHARGING &&
-                level != null && level <= lowBatteryThresholdPercent
+                level != null && level in 0..100 && level < safeLowBatteryThreshold
             ) {
-                add("Pil seviyesi %$level (eşik %$lowBatteryThresholdPercent)")
-            }
-            if (chargeLimitEnabled && charging && plugged && level != null && level >= chargeTargetPercent) {
-                add("Şarj hedefi %$chargeTargetPercent seviyesine ulaştı")
+                add("Pil seviyesi %$level (eşik altı: %$safeLowBatteryThreshold)")
             }
         }
     }
@@ -53,16 +46,12 @@ object BatteryAlertEvaluator {
         thermalAlertEnabled: Boolean,
         thermalThresholdCelsius: Int,
         lowBatteryAlertEnabled: Boolean,
-        lowBatteryThresholdPercent: Int,
-        chargeLimitEnabled: Boolean,
-        chargeTargetPercent: Int
+        lowBatteryThresholdPercent: Int
     ): Boolean = activeAlertReasons(
-        snapshot,
-        thermalAlertEnabled,
-        thermalThresholdCelsius,
-        lowBatteryAlertEnabled,
-        lowBatteryThresholdPercent,
-        chargeLimitEnabled,
-        chargeTargetPercent
+        snapshot = snapshot,
+        thermalAlertEnabled = thermalAlertEnabled,
+        thermalThresholdCelsius = thermalThresholdCelsius,
+        lowBatteryAlertEnabled = lowBatteryAlertEnabled,
+        lowBatteryThresholdPercent = lowBatteryThresholdPercent
     ).isNotEmpty()
 }

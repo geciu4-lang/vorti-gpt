@@ -1,51 +1,38 @@
 package com.vortix.app.feature.insights
 
-import android.net.Uri
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.content.Intent
-import android.widget.Toast
+import android.content.pm.ApplicationInfo
+import android.net.Uri
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.rememberCoroutineScope
 import com.vortix.app.domain.model.EvidenceConfidence
 import com.vortix.app.domain.model.WakelockAccessState
 import com.vortix.app.feature.controls.EnergyControlsViewModel
 import com.vortix.app.feature.controls.UsageAppRow
 import com.vortix.app.platform.UsageAccessSettingsLauncher
-import java.text.DateFormat
+import com.vortix.app.ui.components.GlassPillButton
+import com.vortix.app.ui.components.GlassProgress
+import com.vortix.app.ui.components.glassSurface
+import com.vortix.app.ui.components.VortixGlassShapes
+import com.vortix.app.ui.theme.VortixGlassColors
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
@@ -63,6 +50,8 @@ fun BatteryInsightsPanel(
     val scope = rememberCoroutineScope()
     var pendingCsv by remember { mutableStateOf<String?>(null) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
+    var showDormantList by remember { mutableStateOf(false) }
+    var showAdvancedHistory by remember { mutableStateOf(false) }
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri: Uri? ->
         val csv = pendingCsv
         if (uri != null && csv != null) {
@@ -81,8 +70,6 @@ fun BatteryInsightsPanel(
         controlsViewModel.refreshUsageApps()
         controlsViewModel.refreshWakelockAccess()
     }
-
-    // Re-check app-op permission after the user returns from Android Settings.
     DisposableEffect(lifecycleOwner, viewModel, controlsViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -96,411 +83,323 @@ fun BatteryInsightsPanel(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("SMART HEALTH & VORTIX RADAR", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-            Text(
-                "Pil sağlığı, tüketim eğilimleri ve cihaz kullanımına ilişkin gözlemlenebilir veriler.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+    val latestNightSession = state.nightStandbySessions.maxByOrNull { it.endEpochMillis }
+    val summary = state.summary
+    val healthPercent = summary?.capacity?.healthPercent
+    val estimatedMah = summary?.capacity?.estimatedFullCapacityMicroAh?.let { (it / 1_000.0).toInt() }
+    val designMah = summary?.capacity?.designCapacityMicroAh?.let { (it / 1_000.0).toInt() }
 
-        InsightCard(title = "GECE BEKLEME ANALİZİ · VAMPIRE DRAIN") {
-            if (!state.hasUsageAccess) {
-                Text(
-                    "En etkin uygulama sinyalini göstermek için Android Kullanım erişimi izni gerekir. Bu sinyal pil başına mAh tüketimi değildir.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 1. Night standby summary.
+        InsightCard(title = "Gece Bekleme Analizi") {
+            Text("VAMPIRE DRAIN · SON GECE", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (latestNightSession != null) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "−%${latestNightSession.batteryLossPercent}",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Light,
+                        color = Color.White
+                    )
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("ORTALAMA", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(String.format(Locale.getDefault(), "%.1f %%/sa", latestNightSession.lossPercentPerHour),
+                            style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    }
+                }
+                GlassPillButton(
+                    text = if (showAdvancedHistory) "Ayrıntıları gizle" else "Oturum ayrıntıları",
+                    onClick = { showAdvancedHistory = !showAdvancedHistory },
                 )
-            }
-            if (state.nightStandbySessions.isEmpty()) {
+                if (showAdvancedHistory) {
+                    MetricLine("Bekleme süresi", formatDuration(latestNightSession.durationMillis))
+                    MetricLine("Tüketim", latestNightSession.consumedMah?.let {
+                        "${if (latestNightSession.consumedMahIsEstimated) "≈" else ""}${formatMah(it)} mAh"
+                    } ?: "mAh verisi yok")
+                    latestNightSession.mostActiveAppName?.let { appName ->
+                        MetricLine("En etkin uygulama sinyali", appName)
+                    }
+                    Text("Uygulama sinyali UsageStats ön plan süresidir; uygulama başına gerçek mAh tüketimi değildir.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("—", modifier = Modifier.weight(1f), style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Light, color = Color.White)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("ORTALAMA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("— %/sa", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    }
+                }
                 Text(
-                    "En az 4 saat kesintisiz ekran kapalı, fişten çekilmiş ve düzenli örneklenmiş bir bekleme oturumu henüz bulunamadı. Arka plan telemetri planını açarak ölçüm geçmişi biriktirin.",
+                    "En az 4 saat ekran kapalı, fişten çekilmiş ve düzenli örneklenmiş bir gece oturumu henüz yok.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                state.nightStandbySessions.asReversed().forEach { session ->
-                    val startText = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
-                        .format(Date(session.startEpochMillis))
-                    val endText = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(session.endEpochMillis))
-                    Text("$startText – $endText", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                    MetricLine("Bekleme süresi", formatDuration(session.durationMillis))
-                    MetricLine("Pil kaybı", "-${session.batteryLossPercent}% · ${String.format(Locale.getDefault(), "%.2f", session.lossPercentPerHour)}% / saat")
-                    MetricLine(
-                        "Tüketim",
-                        session.consumedMah?.let { "${if (session.consumedMahIsEstimated) "≈" else ""}${formatMah(it)} mAh" } ?: "mAh verisi kullanılamıyor"
-                    )
-                    session.mostActiveAppName?.let { appName ->
-                        Text(
-                            "Oturumda en çok kullanım sinyali: $appName" +
-                                (session.mostActiveAppForegroundMillis?.let { " · ${formatDuration(it)}" } ?: ""),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                    Text(
-                        "${session.sampleCount} pil örneği. Uygulama sinyali UsageStats ön plan süresidir; uygulama başına gerçek mAh tüketimi değildir.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (!controlsState.isMonitoringEnabled) {
+                    GlassPillButton("Arka plan ölçümünü aç", onOpenControls, Modifier.fillMaxWidth(), accent = true)
                 }
-            }
-            if (!controlsState.isMonitoringEnabled) {
-                OutlinedButton(onClick = onOpenControls, modifier = Modifier.fillMaxWidth()) {
-                    Text("Gece analizi için arka plan ölçümünü aç")
-                }
-            } else {
-                Text(
-                    "Arka plan örnekleme planı etkin. Oturumların oluşması için yeterli süre ve düzenli pil örnekleri gerekir.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
             }
         }
 
-        InsightCard(title = "VORTIX RADAR · UYGULAMA AKSİYONLARI") {
+        // 2. App actions entry points, as in the reference layout.
+        InsightCard(title = "Vortix Radar Uygulama Aksiyonları") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassPillButton(
+                    text = if (controlsState.wakelockAccessState == WakelockAccessState.READY) "Wakelock Tara" else "Shizuku İzni",
+                    onClick = {
+                        when (controlsState.wakelockAccessState) {
+                            WakelockAccessState.READY -> controlsViewModel.refreshWakelockDiagnostics()
+                            else -> controlsViewModel.requestWakelockPermission()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    accent = true,
+                )
+                GlassPillButton(
+                    text = "Kullanım Erişimi",
+                    onClick = { openUsageAccessSettings(context) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text("UYGULAMALARI DONDUR · ARKA PLANI KISITLA", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            when (controlsState.wakelockAccessState) {
+                WakelockAccessState.READY -> Text("SHIZUKU BAĞLI · Üçüncü taraf uygulamalar için aksiyonlar hazır.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                WakelockAccessState.PERMISSION_REQUIRED -> Text("Shizuku izni bekleniyor.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                WakelockAccessState.UNSUPPORTED_VERSION -> Text("Shizuku API v11 veya üzeri gerekir.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                else -> Text("Shizuku bağlı değil. Uygulama ayarlarına yönlendirme kullanılabilir.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            controlsState.packageActionMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }
+            controlsState.wakelockErrorMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        }
+
+        // 3. Smart Health capacity card.
+        InsightCard(title = "Smart Health Pil Kapasitesi") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.weight(1f))
+                Text(healthPercent?.let { "%$it" } ?: "—",
+                    style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Normal)
+            }
+            GlassProgress(
+                fraction = ((healthPercent ?: 0).coerceIn(0, 100)) / 100f,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Text(
-                "Kullanım ve ağ sinyallerine göre uygulamaları incele. Shizuku hazırsa yalnızca üçüncü taraf uygulamalarda durdurma veya arka plan kısıtlama işlemlerini uygula.",
+                if (estimatedMah != null && designMah != null) "$estimatedMah / $designMah mAh"
+                else "Kapasite ölçümü öğreniliyor",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (!controlsState.hasUsageAccess) {
-                Button(onClick = { openUsageAccessSettings(context) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Kullanım erişimi iznini aç")
-                }
-            } else if (controlsState.isLoadingUsage) {
-                Text("Uygulama kullanım ve ağ istatistikleri taranıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else if (controlsState.topApps.isEmpty()) {
-                Text("Gösterilecek uygulama kullanım kaydı bulunamadı.", style = MaterialTheme.typography.bodySmall)
-            } else {
-                controlsState.topApps.forEach { app ->
-                    UsageAppRow(
-                        app = app,
-                        showShizukuActions = controlsState.wakelockAccessState == WakelockAccessState.READY && isThirdPartyPackage(context, app.packageName),
-                        isBusy = controlsState.busyPackageName == app.packageName,
-                        onForceStop = { controlsViewModel.forceStopPackage(app.packageName) },
-                        onRestrictBackground = { controlsViewModel.restrictBackground(app.packageName) },
-                        onOpenSettings = {
-                            runCatching {
-                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                    data = Uri.parse("package:${app.packageName}")
-                                })
-                            }.onFailure {
-                                Toast.makeText(context, "Uygulama ayarları açılamadı.", Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    )
-                }
+            if (healthPercent == null) {
+                Text("Yeterli ölçüm güveni oluştuğunda sağlık yüzdesi gösterilir.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            controlsState.packageActionMessage?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-            }
-            when (controlsState.wakelockAccessState) {
-                WakelockAccessState.PERMISSION_REQUIRED -> Button(
-                    onClick = controlsViewModel::requestWakelockPermission,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Shizuku iznini iste") }
-                WakelockAccessState.READY -> OutlinedButton(
-                    onClick = controlsViewModel::refreshWakelockDiagnostics,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !controlsState.isLoadingWakelocks
-                ) { Text(if (controlsState.isLoadingWakelocks) "Wakelock verileri okunuyor…" else "Wakelock kayıtlarını tara") }
-                WakelockAccessState.UNSUPPORTED_VERSION -> Text(
-                    "Wakelock işlemleri için Shizuku API v11 veya üzeri gerekir.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
-                WakelockAccessState.SHIZUKU_NOT_RUNNING -> Text(
-                    "Shizuku / Sui bağlı değil. Uygulama ayarlarına yönlendirme kullanılabilir.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            controlsState.wakelockErrorMessage?.let { error ->
-                Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-            if (controlsState.wakelockRecords.isNotEmpty()) {
-                Text(
-                    "SON ŞARJDAN BERİ · ${controlsState.wakelockRecords.size} WAKELOCK KAYDI",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                controlsState.wakelockRecords.take(8).forEach { record ->
-                    Text("UID ${record.uid} · ${record.name} · ${record.preferredDurationMillis / 1000}s", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            OutlinedButton(
-                onClick = controlsViewModel::refreshUsageApps,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Radar listesini yenile") }
         }
 
-        state.summary?.let { summary ->
-            InsightCard(title = "Smart Health · Pil kapasitesi") {
-                val capacity = summary.capacity
-                Text(
-                    capacity.healthPercent?.let { "%$it tahmini sağlık" } ?: "Sağlık yüzdesi henüz hesaplanamıyor",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    capacity.estimatedFullCapacityMicroAh?.let { "Tahmini tam kapasite: ${formatMah(it / 1000.0)} mAh" }
-                        ?: "Kapasite tahmini için yeterli ölçüm birikmedi.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    "Kanıt düzeyi: ${confidenceLabel(capacity.confidence)} · Kabul edilen aralık: ${capacity.acceptedIntervals}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                MetricLine(
-                    "Tasarım kapasitesi",
-                    capacity.designCapacityMicroAh?.let { "${formatMah(it / 1000.0)} mAh" } ?: "Ayarlanmadı"
-                )
-                MetricLine(
-                    "Tahmin yayılımı",
-                    capacity.relativeSpreadPercent?.let { String.format(Locale.getDefault(), "%.1f%%", it) } ?: "Yeterli veri yok"
-                )
-                val latestBatterySample = state.history.maxByOrNull { it.capturedAtEpochMillis }
-                MetricLine("Döngü sayısı", latestBatterySample?.cycleCount?.toString() ?: "Cihaz tarafından sunulmuyor")
-                MetricLine(
-                    "Android pil durumu",
-                    latestBatterySample?.health?.let { health ->
-                        when (health.name) {
-                            "GOOD" -> "Normal"
-                            "OVERHEAT" -> "Aşırı sıcak"
-                            "DEAD" -> "Pil arızalı"
-                            "OVER_VOLTAGE" -> "Aşırı voltaj"
-                            "UNSPECIFIED_FAILURE" -> "Belirtilmeyen hata"
-                            "COLD" -> "Çok soğuk"
-                            else -> "Bilinmiyor"
-                        }
-                    } ?: "Sunulmadı"
-                )
-                if (capacity.healthPercent == null) {
-                    Text(
-                        "Sağlık yüzdesi, yeterli ölçüm güveni oluşmadan gösterilmez.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
+        // 4. Charge/discharge session timeline.
+        InsightCard(title = "Tüketim & Oturum Geçmişi") {
+            data class SessionRow(val timestamp: Long, val title: String, val detail: String)
+            val rows = buildList {
+                summary?.recentChargeSessions.orEmpty().forEach { session ->
+                    val gain = ((session.endLevelPercent ?: 0) - (session.startLevelPercent ?: 0)).coerceAtLeast(0)
+                    add(SessionRow(session.startedAtEpochMillis, sessionDateLabel(session.startedAtEpochMillis), "+%$gain · ${formatCompactDuration(session.durationMillis)}"))
                 }
-            }
-
-            InsightCard(title = "Şarj geçmişi · Oturum grafiği") {
-                val chargeGains = summary.recentChargeSessions
-                    .asReversed()
-                    .takeLast(6)
-                    .mapNotNull { session ->
-                        val start = session.startLevelPercent ?: return@mapNotNull null
-                        val end = session.endLevelPercent ?: return@mapNotNull null
-                        (end - start).takeIf { it > 0 }
-                    }
-                if (chargeGains.isEmpty()) {
-                    Text("Grafik için henüz yeterli şarj yüzdesi ölçümü yok.", style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    val maxGain = chargeGains.maxOrNull()?.coerceAtLeast(1) ?: 1
+                summary?.recentDischargeSessions.orEmpty().forEach { session ->
+                    val loss = ((session.startLevelPercent ?: 0) - (session.endLevelPercent ?: 0)).coerceAtLeast(0)
+                    add(SessionRow(session.startedAtEpochMillis, sessionDateLabel(session.startedAtEpochMillis), "−%$loss · ${formatCompactDuration(session.durationMillis)}"))
+                }
+            }.sortedByDescending { it.timestamp }.take(3)
+            if (rows.isEmpty()) {
+                Text("Henüz doğrulanmış şarj veya deşarj oturumu yok.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                rows.forEachIndexed { index, row ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().height(116.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.Bottom
+                        modifier = Modifier.fillMaxWidth()
+                            .glassSurface(shape = VortixGlassShapes.Inner, fill = VortixGlassColors.InnerFill)
+                            .padding(horizontal = 12.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        chargeGains.forEachIndexed { index, gain ->
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Bottom
-                            ) {
-                                Text("+$gain%", style = MaterialTheme.typography.labelSmall)
-                                Box(
-                                    modifier = Modifier
-                                        .width(20.dp)
-                                        .height(76.dp * (gain.toFloat() / maxGain.toFloat()).coerceIn(0.08f, 1f))
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(MaterialTheme.colorScheme.primary)
-                                )
-                                Text("${index + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                    Text(
-                        "Sütunlar kaydedilen oturumların gerçek pil yüzdesi artışını gösterir; eksik ölçümler tahmin edilmez.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            InsightCard(title = "VORTIX RADAR · Tüketim") {
-                MetricLine("Ekran açık tüketim", summary.drain.screenOnPercentPerHour?.let { String.format(Locale.getDefault(), "%.2f%% / saat", it) } ?: "Yeterli veri yok")
-                MetricLine("Ekran kapalı tüketim", summary.drain.screenOffPercentPerHour?.let { String.format(Locale.getDefault(), "%.2f%% / saat", it) } ?: "Yeterli veri yok")
-                MetricLine("Tahmini kalan süre", summary.drain.estimatedRuntimeMinutesAtCurrentLevel?.let(::formatDuration) ?: "Hesaplanamıyor")
-                summary.screenOffDrainAnomaly?.let { anomaly ->
-                    Text(
-                        "Kişisel tabana göre ekran kapalı tüketim artışı: ${String.format(Locale.getDefault(), "%.0f%%", anomaly.increasePercent)}",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-
-            InsightCard(title = "Ölçüm güvenilirliği & termal geçmiş") {
-                MetricLine("Örnek sayısı", summary.sampleCount.toString())
-                MetricLine("Ölçüm kapsamı", summary.samplingCoveragePercent?.let { "%$it" } ?: "Hesaplanamıyor")
-                MetricLine("En uzun ölçüm aralığı", summary.longestSamplingGapMillis?.let(::formatDuration) ?: "—")
-                MetricLine("Gözlenen en yüksek sıcaklık", summary.thermalExposure.highestObservedCelsius?.let { String.format(Locale.getDefault(), "%.1f°C", it) } ?: "—")
-                MetricLine("40°C üzerindeki gözlem", "${summary.thermalExposure.observedMinutesAtOrAbove40C} dk")
-                Text(summary.thermalExposure.coverageNote, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
-            InsightCard(title = "Şarj oturumları") {
-                if (summary.recentChargeSessions.isEmpty()) {
-                    Text("Henüz yeterli şarj oturumu kaydedilmedi.", style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    summary.recentChargeSessions.takeLast(5).reversed().forEach { session ->
-                        MetricLine(
-                            "${session.startLevelPercent?.let { "%$it" } ?: "—"} → ${session.endLevelPercent?.let { "%$it" } ?: "—"}",
-                            session.addedChargeMilliAmpHours?.let { "+${formatMah(it)} mAh" } ?: formatDuration(session.durationMillis)
-                        )
+                        Text(row.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(row.detail, style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-        } ?: InsightCard(title = "Smart Health öğrenme aşamasında") {
-            Text("Pil kapasitesi ve tüketim analizleri için ölçüm geçmişi biriktiriliyor.", style = MaterialTheme.typography.bodyMedium)
-        }
-
-        state.summary?.let { summary ->
-            InsightCard(title = "Deşarj günlüğü · Gözlenen oturumlar") {
-                if (summary.recentDischargeSessions.isEmpty()) {
-                    Text("Henüz yeterli ve kesintisiz deşarj gözlemi yok.", style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    summary.recentDischargeSessions.takeLast(7).reversed().forEach { session ->
-                        val levels = "${session.startLevelPercent?.let { "%$it" } ?: "—"} → ${session.endLevelPercent?.let { "%$it" } ?: "—"}"
-                        MetricLine(levels, formatDuration(session.durationMillis))
-                        Text(
-                            "Ekran açık ${formatDuration(session.observedScreenOnMillis)} · ekran kapalı ${formatDuration(session.observedScreenOffMillis)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+            summary?.let { value ->
+                value.screenOffDrainAnomaly?.let { anomaly ->
+                    Text("Ekran kapalı tüketim kişisel tabanın ${String.format(Locale.getDefault(), "%.0f%%", anomaly.increasePercent)} üzerinde.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 }
             }
         }
 
-        InsightCard(title = "Ağ kullanımı · Son 24 saat") {
-            if (!state.hasUsageAccess) {
-                Text(
-                    "Uygulama bazlı ağ istatistikleri için Android Kullanım erişimi izni gerekir.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        // 5. Network usage split into two compact tiles.
+        InsightCard(title = "Ağ Kullanımı") {
+            val network = state.networkUsage
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NetworkValueTile(
+                    label = "WI-FI",
+                    value = network?.wifiBytes?.let(::formatBytes) ?: "—",
+                    modifier = Modifier.weight(1f)
+                )
+                NetworkValueTile(
+                    label = "MOBİL",
+                    value = network?.mobileBytes?.let(::formatBytes) ?: "—",
+                    modifier = Modifier.weight(1f)
                 )
             }
-            if (state.hasUsageAccess) {
-                val network = state.networkUsage
-                if (network != null) {
-                    MetricLine("Mobil veri", network.mobileBytes?.let(::formatBytes) ?: "Kullanılamıyor")
-                    MetricLine("Wi-Fi", network.wifiBytes?.let(::formatBytes) ?: "Kullanılamıyor")
-                    MetricLine("Mobil zaman kovası", network.mobileHistoryBuckets?.size?.toString() ?: "Sunulmadı")
-                    MetricLine("Wi-Fi zaman kovası", network.wifiHistoryBuckets?.size?.toString() ?: "Sunulmadı")
-                    Text(network.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    Text(state.networkErrorMessage ?: "Ağ özeti henüz yüklenmedi.", style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-            UsageAccessSettingsButton(
-                context = context,
-                label = if (state.hasUsageAccess) "Kullanım erişimi ayarlarını yönet" else "Ağ kullanımı için izni aç"
-            )
-            OutlinedButton(onClick = viewModel::refreshNetworkUsage, modifier = Modifier.fillMaxWidth()) {
-                Text(if (state.isLoadingNetwork) "Yükleniyor…" else "Ağ verisini yenile")
-            }
-        }
-
-        InsightCard(title = "Kullanılmayan uygulamalar") {
             if (!state.hasUsageAccess) {
-                Text("Uygulama kullanım geçmişi için Android Kullanım erişimi gerekir.", style = MaterialTheme.typography.bodyMedium)
-            } else if (state.dormantApps.isEmpty()) {
-                Text(state.dormantAppsErrorMessage ?: "14 gün veya daha uzun süredir kullanılmadığı doğrulanan uygulama bulunamadı.", style = MaterialTheme.typography.bodyMedium)
-            } else {
-                state.dormantApps.take(8).forEach { app ->
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(app.displayName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                            Text(app.daysSinceLastUse?.let { "$it gündür kullanılmadı" } ?: "Kullanım verisi yok", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        OutlinedButton(onClick = {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                        data = Uri.parse("package:${app.packageName}")
-                                    }
-                                )
+                Text("Ağ ve uygulama kullanım ayrıntıları için Android Kullanım Erişimi gerekir.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        // 6. Dormant apps; the list opens on demand so the reference screen stays compact.
+        InsightCard(title = "Kullanılmayan Uygulamalar") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Son 30 günde açılmayan", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Text(state.dormantApps.size.toString(), style = MaterialTheme.typography.titleLarge, color = Color.White)
+            }
+            GlassPillButton(
+                text = if (showDormantList) "Listeyi Gizle" else "Listeyi Gör",
+                onClick = { showDormantList = !showDormantList },
+                modifier = Modifier.fillMaxWidth(),
+                accent = showDormantList,
+            )
+            if (showDormantList) {
+                if (!state.hasUsageAccess) {
+                    Text("Uygulama geçmişi için kullanım erişimini açın.", style = MaterialTheme.typography.bodySmall)
+                    UsageAccessSettingsButton(context, "Kullanım erişimini aç")
+                } else if (state.dormantApps.isEmpty()) {
+                    Text(state.dormantAppsErrorMessage ?: "Kullanılmayan uygulama bulunamadı.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    state.dormantApps.take(8).forEach { app ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(app.displayName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                Text(app.daysSinceLastUse?.let { "$it gündür kullanılmadı" } ?: "Son kullanım bilinmiyor",
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                        }) { Text("Uygulama ayarları") }
-                    }
-                }
-            }
-            UsageAccessSettingsButton(
-                context = context,
-                label = if (state.hasUsageAccess) "Kullanım erişimi ayarlarını yönet" else "Kullanılmayan uygulamalar için izni aç"
-            )
-            Text("Bu liste kullanım geçmişine dayalı bir gözlemdir; VORTIX uygulamaları otomatik durdurmaz veya gerçek Android hibernation uygulamaz.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = viewModel::refreshDormantApps, modifier = Modifier.fillMaxWidth()) {
-                Text(if (state.isLoadingDormantApps) "Taranıyor…" else "Uygulamaları yeniden tara")
-            }
-        }
-
-        InsightCard(title = "Veri dışa aktarma") {
-            Text("Cihazda hâlen saklanan tüm pil örneklerini CSV dosyası olarak dışa aktar. Dosya konumunu Android'in kaydetme penceresinde sen seçersin.", style = MaterialTheme.typography.bodyMedium)
-            Button(
-                onClick = {
-                    scope.launch {
-                        val csvResult = runCatching { viewModel.loadCsv() }
-                        pendingCsv = csvResult.getOrNull()
-                        if (pendingCsv != null) {
-                            csvLauncher.launch("vortix-battery-history.csv")
-                        } else {
-                            exportMessage = "CSV hazırlanamadı: ${csvResult.exceptionOrNull()?.localizedMessage ?: "bilinmeyen hata"}"
+                            GlassPillButton(
+                                "Ayarlar",
+                                {
+                                    runCatching {
+                                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.parse("package:${app.packageName}")
+                                        })
+                                    }
+                                },
+                            )
                         }
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Pil geçmişini CSV dışa aktar") }
-            exportMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }
+                }
+                if (controlsState.topApps.isNotEmpty()) {
+                    Text("YÜKSEK KULLANIM · UYGULAMA AKSİYONLARI", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    controlsState.topApps.take(5).forEach { app ->
+                        UsageAppRow(
+                            app = app,
+                            showShizukuActions = controlsState.wakelockAccessState == WakelockAccessState.READY && isThirdPartyPackage(context, app.packageName),
+                            isBusy = controlsState.busyPackageName == app.packageName,
+                            onForceStop = { controlsViewModel.forceStopPackage(app.packageName) },
+                            onRestrictBackground = { controlsViewModel.restrictBackground(app.packageName) },
+                            onOpenSettings = {
+                                runCatching {
+                                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.parse("package:${app.packageName}")
+                                    })
+                                }
+                            }
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassPillButton(
+                        if (state.isLoadingDormantApps) "Taranıyor…" else "Listeyi Yenile",
+                        viewModel::refreshDormantApps, Modifier.weight(1f), enabled = !state.isLoadingDormantApps,
+                    )
+                    GlassPillButton("Radar Verisini Yenile", controlsViewModel::refreshUsageApps, Modifier.weight(1f))
+                }
+            }
         }
 
-        InsightCard(title = "Pil değişimi / yeni başlangıç") {
-            Text(
-                "Yeni pil takıldığında yeni bir öğrenme başlangıcı oluşturur. Önceki ölçüm geçmişi silinmez.",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Button(onClick = viewModel::markBatteryReplaced, modifier = Modifier.fillMaxWidth()) {
-                Text("Yeni pil takıldı olarak işaretle")
-            }
-            state.changeMarkers.take(5).forEach { marker ->
-                MetricLine(marker.title, DateFormat.getDateTimeInstance().format(Date(marker.atEpochMillis)))
-                state.changeComparisons[marker.atEpochMillis]?.let { comparison ->
-                    val before = comparison.beforeScreenOffPercentPerHour?.let { String.format(Locale.getDefault(), "%.1f%%/sa", it) } ?: "—"
-                    val after = comparison.afterScreenOffPercentPerHour?.let { String.format(Locale.getDefault(), "%.1f%%/sa", it) } ?: "—"
-                    Text("Ekran kapalı tüketim: önce $before · sonra $after", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 7. Export action.
+        InsightCard(title = "CSV Dışa Aktarma") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("TÜM ÖLÇÜMLER", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    exportMessage?.let { Text(it, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary) }
                 }
+                GlassPillButton(
+                    text = "Dışa Aktar",
+                    onClick = {
+                        scope.launch {
+                            val csvResult = runCatching { viewModel.loadCsv() }
+                            pendingCsv = csvResult.getOrNull()
+                            if (pendingCsv != null) csvLauncher.launch("vortix-battery-history.csv")
+                            else exportMessage = "CSV hazırlanamadı: ${csvResult.exceptionOrNull()?.localizedMessage ?: "bilinmeyen hata"}"
+                        }
+                    },
+                    accent = true,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun UsageAccessSettingsButton(context: Context, label: String) {
-    OutlinedButton(
-        onClick = { openUsageAccessSettings(context) },
-        modifier = Modifier.fillMaxWidth()
+private fun NetworkValueTile(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .glassSurface(shape = VortixGlassShapes.Inner, fill = VortixGlassColors.InnerFill)
+            .padding(11.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(label)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.headlineSmall, color = Color.White, fontWeight = FontWeight.Normal)
     }
+}
+
+private fun sessionDateLabel(timestamp: Long): String {
+    val session = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
+    val today = java.util.Calendar.getInstance()
+    val yesterday = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }
+    val time = java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
+    return when {
+        session.get(java.util.Calendar.YEAR) == today.get(java.util.Calendar.YEAR) &&
+            session.get(java.util.Calendar.DAY_OF_YEAR) == today.get(java.util.Calendar.DAY_OF_YEAR) -> "Bugün $time"
+        session.get(java.util.Calendar.YEAR) == yesterday.get(java.util.Calendar.YEAR) &&
+            session.get(java.util.Calendar.DAY_OF_YEAR) == yesterday.get(java.util.Calendar.DAY_OF_YEAR) -> "Dün $time"
+        else -> java.text.SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(timestamp))
+    }
+}
+
+private fun formatCompactDuration(milliseconds: Long): String {
+    val minutes = (milliseconds / 60_000L).coerceAtLeast(0L)
+    val hours = minutes / 60L
+    return if (hours > 0L) "$hours sa" else "$minutes dk"
+}
+
+@Composable
+private fun UsageAccessSettingsButton(context: Context, label: String) {
+    GlassPillButton(
+        text = label,
+        onClick = { openUsageAccessSettings(context) },
+        modifier = Modifier.fillMaxWidth(),
+        accent = true,
+    )
 }
 
 private fun isThirdPartyPackage(context: Context, packageName: String): Boolean {
@@ -522,7 +421,7 @@ private fun InsightCard(title: String, content: @Composable () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = 22
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             content()
         }
@@ -534,6 +433,20 @@ private fun MetricLine(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+private fun formatBytes(bytes: Long?): String {
+    if (bytes == null) return "—"
+    val value = bytes.coerceAtLeast(0L)
+    val kib = 1024.0
+    val mib = kib * 1024.0
+    val gib = mib * 1024.0
+    return when {
+        value >= gib -> String.format(Locale.getDefault(), "%.2f GB", value / gib)
+        value >= mib -> String.format(Locale.getDefault(), "%.1f MB", value / mib)
+        value >= kib -> String.format(Locale.getDefault(), "%.1f KB", value / kib)
+        else -> "$value B"
     }
 }
 
@@ -558,8 +471,3 @@ private fun formatDuration(milliseconds: Long): String {
     }
 }
 
-private fun formatBytes(bytes: Long): String {
-    val mib = bytes.coerceAtLeast(0L) / (1024.0 * 1024.0)
-    return if (mib >= 1024.0) String.format(Locale.getDefault(), "%.2f GB", mib / 1024.0)
-    else String.format(Locale.getDefault(), "%.1f MB", mib)
-}

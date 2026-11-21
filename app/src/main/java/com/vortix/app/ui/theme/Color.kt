@@ -2,24 +2,42 @@ package com.vortix.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val VortixBackground = Color(0xFF070B10)
-val VortixBackdropMid = Color(0xFF0D141F)
-val VortixSurface = Color(0xFF101720)
-val VortixSurfaceVariant = Color(0xFF192330)
-val VortixSurfaceElevated = Color(0xFF212E3E)
+/** Dark Frosted Glass palette, adapted from the supplied VORTIX design source. */
+object VortixGlassColors {
+    val Obsidian = Color(0xFF090B10)
+    val GlassFill = Color(0xFF161A23).copy(alpha = 0.62f)
+    val DockFill = Color(0xFF161A23).copy(alpha = 0.86f)
+    val InnerFill = Color.White.copy(alpha = 0.045f)
 
-// Glassmorphism surface and border tokens
-val GlassSurfaceTop = Color(0x9E192231)
-val GlassSurfaceBottom = Color(0x88101722)
-val GlassBorderHighlight = Color(0x66FFFFFF)
-val GlassBorderSubtle = Color(0x26FFFFFF)
-val GlassPillActive = Color(0x3856F0B5)
+    val Coral = Color(0xFFFF5A5F)
+    val Emerald = Color(0xFF00D285)
+    val EmeraldSoft = Color(0xFF6DF0BD)
+    val Amber = Color(0xFFFFB454)
 
-// Accent and status colors
-val VortixPrimary = Color(0xFF56F0B5)
+    val TextPrimary = Color(0xFFF5F7FA)
+    val TextMuted = Color(0xFF9AA4B2)
+    val SpecularBright = Color.White.copy(alpha = 0.18f)
+    val SpecularDim = Color.White.copy(alpha = 0.04f)
+}
+
+val VortixBackground = VortixGlassColors.Obsidian
+val VortixBackdropMid = Color(0xFF10141D)
+val VortixSurface = Color(0xFF161A23)
+val VortixSurfaceVariant = Color(0xFF20242D)
+val VortixSurfaceElevated = Color(0xFF252A34)
+
+// Frosted surfaces use translucent charcoal fills and a specular edge gradient.
+val GlassSurfaceTop = Color(0x9E161A23)
+val GlassSurfaceBottom = Color(0x8812161F)
+val GlassBorderHighlight = VortixGlassColors.SpecularBright
+val GlassBorderSubtle = VortixGlassColors.SpecularDim
+val GlassPillActive = VortixGlassColors.Emerald.copy(alpha = 0.22f)
+
+// Accent and status colors retain the app's public token names for existing screens.
+val VortixPrimary = VortixGlassColors.Emerald
 val VortixSecondary = Color(0xFF47C5FB)
-val VortixTertiary = Color(0xFFFFB74D)
-val VortixError = Color(0xFFFF6B6B)
-val VortixOnBackground = Color(0xFFEBF2F7)
-val VortixOnSurfaceVariant = Color(0xFF94A6B8)
-val VortixOutline = Color(0xFF2E3D4D)
+val VortixTertiary = VortixGlassColors.Amber
+val VortixError = VortixGlassColors.Coral
+val VortixOnBackground = VortixGlassColors.TextPrimary
+val VortixOnSurfaceVariant = VortixGlassColors.TextMuted
+val VortixOutline = Color(0xFF303743)

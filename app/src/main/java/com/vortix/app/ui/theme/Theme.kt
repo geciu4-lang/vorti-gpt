@@ -5,19 +5,19 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
 private val VortixDarkColorScheme = darkColorScheme(
-    primary = VortixPrimary,
-    onPrimary = VortixBackground,
-    secondary = VortixSecondary,
-    onSecondary = VortixBackground,
-    tertiary = VortixTertiary,
-    onTertiary = VortixBackground,
-    error = VortixError,
-    background = VortixBackground,
-    onBackground = VortixOnBackground,
+    primary = VortixGlassColors.Emerald,
+    onPrimary = VortixGlassColors.Obsidian,
+    secondary = VortixGlassColors.Amber,
+    onSecondary = VortixGlassColors.Obsidian,
+    tertiary = VortixGlassColors.Coral,
+    onTertiary = VortixGlassColors.Obsidian,
+    error = VortixGlassColors.Coral,
+    background = VortixGlassColors.Obsidian,
+    onBackground = VortixGlassColors.TextPrimary,
     surface = VortixSurface,
-    onSurface = VortixOnBackground,
+    onSurface = VortixGlassColors.TextPrimary,
     surfaceVariant = VortixSurfaceVariant,
-    onSurfaceVariant = VortixOnSurfaceVariant,
+    onSurfaceVariant = VortixGlassColors.TextMuted,
     outline = VortixOutline
 )
 

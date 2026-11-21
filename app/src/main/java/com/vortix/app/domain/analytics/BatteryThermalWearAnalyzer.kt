@@ -42,5 +42,5 @@ object SystemThermalStatus {
         else -> "BİLİNMİYOR"
     }
 
-    fun isWarning(status: Int?): Boolean = status != null && status >= MODERATE
+    fun isWarning(status: Int?): Boolean = status != null && status in MODERATE..SHUTDOWN
 }
