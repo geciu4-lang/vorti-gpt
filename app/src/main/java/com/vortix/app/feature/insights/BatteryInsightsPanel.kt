@@ -1,4 +1,5 @@
 package com.vortix.app.feature.insights
+import com.vortix.app.platform.UsageAccessSettingsLauncher
 
 import android.net.Uri
 import android.content.Context
