@@ -239,6 +239,7 @@ class EnergyControlsViewModel @Inject constructor(
             it.copy(
                 designCapacityMah = safeCap,
                 designCapacityMessage = "$safeCap mAh kaydediliyor…",
+                message = "$safeCap mAh referans kapasitesi kaydediliyor…",
                 isSavingDesignCapacity = true,
                 isDesignCapacitySaveError = false
             )
@@ -261,6 +262,7 @@ class EnergyControlsViewModel @Inject constructor(
                             it.copy(
                                 designCapacityMah = safeCap,
                                 designCapacityMessage = "Referans kapasite $safeCap mAh olarak kaydedildi.",
+                                message = "Referans kapasite $safeCap mAh olarak kaydedildi.",
                                 isSavingDesignCapacity = false,
                                 isDesignCapacitySaveError = false
                             )
@@ -277,6 +279,7 @@ class EnergyControlsViewModel @Inject constructor(
                         it.copy(
                             designCapacityMah = persistedDesignCapacityMah,
                             designCapacityMessage = "Kapasite kaydedilemedi; son kayıtlı değer korundu.",
+                            message = "Kapasite kaydedilemedi; son kayıtlı değer korundu.",
                             isSavingDesignCapacity = false,
                             isDesignCapacitySaveError = true
                         )

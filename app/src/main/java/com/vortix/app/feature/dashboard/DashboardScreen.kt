@@ -65,6 +65,7 @@ fun DashboardScreen(
     val insightsState by insightsViewModel.uiState.collectAsStateWithLifecycle()
     val snapshot = uiState.snapshot
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val onTabSelected: (Int) -> Unit = { nextTab -> selectedTab = nextTab.coerceIn(0, 2) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
 
     val isAlert = remember(
@@ -101,7 +102,7 @@ fun DashboardScreen(
         containerColor = VortixBackground,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            AmbientGlassDockBar(selectedTab, { selectedTab = it }, { viewModel.refresh() })
+            AmbientGlassDockBar(selectedTab, onTabSelected, viewModel::refresh)
         }
     ) { pad ->
         Box(
@@ -111,12 +112,13 @@ fun DashboardScreen(
         ) {
             Column(
                 modifier = Modifier.fillMaxSize().statusBarsPadding()
-                    .padding(top = pad.calculateTopPadding())
+                    // Apply Scaffold insets before verticalScroll so the scroll viewport
+                    // ends above the dock instead of drawing beneath it.
+                    .padding(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding())
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 12.dp)
-                    // Scaffold reserves the dock area; keep an additional scrollable gap
-                    // so the final card can never slide underneath the opaque navigation capsule.
-                    .padding(bottom = pad.calculateBottomPadding() + 20.dp),
+                    // Keep a scrollable tail after the last card for comfortable reach.
+                    .padding(bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 AmbientTopBar(isAlert, uiState.isRefreshing)
@@ -126,13 +128,18 @@ fun DashboardScreen(
                             modifier = Modifier.padding(14.dp))
                     }
                 }
-                when (selectedTab) {
-                    0 -> when {
+                key(selectedTab) {
+                    when (selectedTab) {
+                        0 -> when {
                         snapshot != null -> {
                             MediaInspiredHeroCard(
-                                snapshot, controlsState.isChargeLimitEnabled,
-                                controlsState.chargeTargetPercent, isAlert,
-                                { selectedTab = 1 }, { selectedTab = 2 }
+                                snapshot = snapshot,
+                                chargeLimitEnabled = controlsState.isChargeLimitEnabled,
+                                chargeTarget = controlsState.chargeTargetPercent,
+                                isAlert = isAlert,
+                                onControls = { onTabSelected(1) },
+                                // Hero and dock both route through the same tab-state callback.
+                                onRadar = { onTabSelected(2) }
                             )
                             AmbientQuickControlsRow(
                                 controlsState.isChargeLimitEnabled, controlsState.chargeTargetPercent,
@@ -141,7 +148,7 @@ fun DashboardScreen(
                                 energyControlsViewModel::setThermalAlertEnabled
                             )
                             BatteryHealthDiagnosticsCard(insightsState.summary, insightsState.designCapacityMah) {
-                                selectedTab = 1
+                                onTabSelected(1)
                             }
                             Text("CANLI SENSÖR TELEMETRİSİ", style = MaterialTheme.typography.labelLarge,
                                 color = VortixOnSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
@@ -158,8 +165,9 @@ fun DashboardScreen(
                         uiState.isRefreshing -> LoadingPanel()
                         else -> EmptyState { viewModel.refresh() }
                     }
-                    1 -> EnergyControlsPanel(energyControlsViewModel)
-                    else -> BatteryInsightsPanel(insightsViewModel)
+                        1 -> EnergyControlsPanel(energyControlsViewModel)
+                        else -> BatteryInsightsPanel(insightsViewModel)
+                    }
                 }
             }
         }
@@ -186,14 +194,20 @@ private fun AmbientTopBar(isAlert: Boolean, isRefreshing: Boolean) {
                     style = MaterialTheme.typography.labelSmall, color = VortixOnSurfaceVariant)
             }
         }
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = if (isAlert) VortixError.copy(alpha = 0.16f) else GlassPillActive,
-            border = BorderStroke(1.dp, if (isAlert) VortixError.copy(alpha = 0.5f) else VortixPrimary.copy(alpha = 0.45f))
-        ) {
-            Text(if (isAlert) "UYARI" else "NORMAL", style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold, color = if (isAlert) VortixError else VortixPrimary,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+        if (isAlert) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = VortixError.copy(alpha = 0.16f),
+                border = BorderStroke(1.dp, VortixError.copy(alpha = 0.5f))
+            ) {
+                Text(
+                    "UYARI",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = VortixError,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
         }
     }
 }
@@ -246,8 +260,15 @@ private fun MediaInspiredHeroCard(
                     shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, GlassBorderHighlight)) {
                     Text("Şarj Hedefi", color = Color.White, style = MaterialTheme.typography.labelMedium)
                 }
-                Button(onClick = onRadar, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.22f), contentColor = accent)) {
+                Button(
+                    onClick = { onRadar() },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent.copy(alpha = 0.22f),
+                        contentColor = accent
+                    )
+                ) {
                     Text("Tüketim Radarı", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 }
             }
@@ -379,21 +400,65 @@ private fun BatteryHistoryChartCard(snaps: List<BatterySnapshot>, onClear: () ->
                 Text("Grafik için geçerli pil seviyesi ölçümü bulunamadı.",
                     style = MaterialTheme.typography.bodySmall, color = VortixOnSurfaceVariant)
             } else {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        summary.startAtEpochMillis?.let { "Başlangıç · ${timeFormatter.format(Date(it))}" } ?: "Başlangıç · —",
-                        style = MaterialTheme.typography.labelSmall, color = VortixOnSurfaceVariant
-                    )
-                    Text(
-                        summary.endAtEpochMillis?.let { "Bitiş · ${timeFormatter.format(Date(it))}" } ?: "Bitiş · —",
-                        style = MaterialTheme.typography.labelSmall, color = VortixOnSurfaceVariant
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("BAŞLANGIÇ", style = MaterialTheme.typography.labelSmall, color = VortixOnSurfaceVariant)
+                        Text(
+                            summary.startAtEpochMillis?.let { timeFormatter.format(Date(it)) } ?: "—",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                        Text("BİTİŞ", style = MaterialTheme.typography.labelSmall, color = VortixOnSurfaceVariant)
+                        Text(
+                            summary.endAtEpochMillis?.let { timeFormatter.format(Date(it)) } ?: "—",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Min · ${summary.minimumLevelPercent?.let { "%$it" } ?: "—"}",
-                        style = MaterialTheme.typography.labelMedium, color = VortixTertiary)
-                    Text("Maks · ${summary.maximumLevelPercent?.let { "%$it" } ?: "—"}",
-                        style = MaterialTheme.typography.labelMedium, color = VortixPrimary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = VortixTertiary.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, VortixTertiary.copy(alpha = 0.35f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("MİN", style = MaterialTheme.typography.labelSmall, color = VortixTertiary)
+                            Text("${summary.minimumLevelPercent?.let { "%$it" } ?: "—"}",
+                                style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = VortixPrimary.copy(alpha = 0.10f),
+                        border = BorderStroke(1.dp, VortixPrimary.copy(alpha = 0.35f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("MAKS", style = MaterialTheme.typography.labelSmall, color = VortixPrimary)
+                            Text("${summary.maximumLevelPercent?.let { "%$it" } ?: "—"}",
+                                style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
                 Canvas(modifier = Modifier.fillMaxWidth().height(90.dp)) {
                     val points = summary.points
@@ -460,8 +525,14 @@ private fun formatPowerText(limit: Boolean, target: Int, watts: Double?): String
 
 @Composable
 private fun AmbientGlassDockBar(sel: Int, onSel: (Int) -> Unit, onRef: () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier.fillMaxWidth()
+            // Opaque full-width dock backdrop prevents scroll content showing around the capsule.
+            .background(Color(0xFF070B10))
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
         Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(32.dp),
             // Fully opaque to prevent scroll content from showing through the dock.
             color = Color(0xFF080D14), border = BorderStroke(1.dp, GlassBorderHighlight), tonalElevation = 0.dp) {

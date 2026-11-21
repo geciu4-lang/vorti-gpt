@@ -109,16 +109,30 @@ The user reported GitHub Actions run `44911935628` passed `:app:testDebugUnitTes
 On a representative Android 11/API 30 device and a recent Android release, test Shizuku unavailable, binder missing/reconnected, permission denied/granted, API version too old, empty stats, v18/v19/v21/v22+ output, large output, binder disconnect and service timeout. Verify the standard radar still works when Shizuku is absent.
 
 
-## VORTIX 7.0.5 — Seven video-review remediations
 
-- Corrected/locked the Controls Radar permission action to `Settings.ACTION_USAGE_ACCESS_SETTINGS`; the separate Battery Saver action remains explicitly `Settings.ACTION_BATTERY_SAVER_SETTINGS`.
-- Made the bottom navigation capsule fully opaque and replaced fixed scroll clearance with Scaffold bottom-bar padding plus a small safety gap.
-- Added Usage Access buttons to both Radar-tab Network Usage and Dormant Apps cards and refreshes both data sources on activity resume.
-- Added signed-current formatting that normalizes values rounding to zero to `0 mA`.
-- Serialized design-capacity writes, ignored stale pending writes, and connected selected value plus confirmation message to the same ViewModel state.
-- Added start/end timestamps and min/max percentages to the battery history chart.
-- Replaced the passive `CANLI` status label with `NORMAL`; `UYARI` appears only while an alert is active.
-- Added six pure formatter/chart tests and a rapid-capacity-selection regression test.
-- Bumped the application version to 7.0.5 / versionCode 14 and retained `.github/workflows/build.yml`, the 76.dp multiplier correction and the 7.0.4 Shizuku sources.
+## VORTIX 7.0.6 — six follow-up video-review remediations
 
-Not run in this workspace: full Gradle/Android compilation, complete JUnit suite, APK assembly and Firebase Test Lab for this exact 7.0.5 archive. The exact revision still needs CI and device verification.
+### Source changes
+
+- Centralized permission navigation through a single `UsageAccessSettingsLauncher` using only `Settings.ACTION_USAGE_ACCESS_SETTINGS`; no Battery Saver fallback exists in that path.
+- Made the full bottom dock background opaque and applied Scaffold bottom-bar insets before the scroll modifier.
+- Kept direct Usage Access management buttons visible in both Radar-tab cards, including after permission has been granted.
+- Updated selected capacity, card confirmation and top Controls banner together; kept serialized/latest-write behavior and strengthened the rapid-selection test.
+- Routed the hero Radar button and dock through the same tab callback and keyed the selected-tab content branch.
+- Made history start/end timestamps and min/max values visually prominent; removed the passive top-right badge so `UYARI` exists only during an active alert.
+- Retained the user's Build Tools compatibility declaration `void destroy();` in `IWakelockDiagnosticsService.aidl`.
+- Bumped app version to 7.0.6 / versionCode 15 and kept `.github/workflows/build.yml` with unit-test and Debug APK steps.
+
+### Checks performed in this workspace
+
+- Pure Kotlin dashboard formatting/chart harness: 12 assertions passed.
+- Usage Access launcher action contract compiled against minimal Android API stubs and passed.
+- Static checks passed for the six requested source invariants, AndroidManifest XML, Gradle TOML and GitHub Actions YAML.
+- The ZIP archive is tested for corruption and a SHA-256 file is provided alongside it.
+
+### Not verified for this exact 7.0.6 revision
+
+- Full Android Gradle/Kotlin/Compose build, KSP/Hilt/Room generation, complete `:app:testDebugUnitTest`, `:app:assembleDebug`, install and Firebase Test Lab execution.
+- The wrapper was attempted using JDK 21 but could not resolve `services.gradle.org`; no Android SDK or cached Gradle distribution is installed in this workspace.
+
+The user reported that VORTIX 7.0.5 passed `:app:testDebugUnitTest`, `:app:assembleDebug` and Pixel 5/API 30 Robo testing after changing the AIDL declaration to `void destroy();`. Those results are retained as the previous baseline, not claimed as validation of this new 7.0.6 revision. Re-run the repository's GitHub Actions workflow and Firebase Test Lab before release.

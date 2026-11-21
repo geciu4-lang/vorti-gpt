@@ -92,6 +92,7 @@ class EnergyControlsViewModelTest {
         assertEquals(6_000, settings.designCapacity.value)
         assertEquals(6_000, viewModel.uiState.value.designCapacityMah)
         assertEquals("Referans kapasite 6000 mAh olarak kaydedildi.", viewModel.uiState.value.designCapacityMessage)
+        assertEquals("Referans kapasite 6000 mAh olarak kaydedildi.", viewModel.uiState.value.message)
         assertFalse(viewModel.uiState.value.isSavingDesignCapacity)
         assertFalse(viewModel.uiState.value.isDesignCapacitySaveError)
     }

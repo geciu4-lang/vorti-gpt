@@ -2,6 +2,8 @@ package com.vortix.app.feature.controls
 
 import android.Manifest
 import android.content.Intent
+import android.content.Context
+import android.widget.Toast
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -48,6 +50,7 @@ import com.vortix.app.domain.model.AppUsageItem
 import com.vortix.app.domain.model.WakelockAccessState
 import com.vortix.app.domain.model.WakelockRecord
 import com.vortix.app.feature.dashboard.GlassContainer
+import com.vortix.app.platform.UsageAccessSettingsLauncher
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -694,13 +697,9 @@ private fun formatBytes(bytes: Long?): String {
     }
 }
 
-private fun openUsageAccessSettings(context: android.content.Context) {
-    // Keep this action separate from the Battery Saver shortcut below.
-    runCatching {
-        context.startActivity(
-            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
+private fun openUsageAccessSettings(context: Context) {
+    if (!UsageAccessSettingsLauncher.open(context)) {
+        Toast.makeText(context, "Kullanım erişimi ayarları açılamadı.", Toast.LENGTH_LONG).show()
     }
 }
 

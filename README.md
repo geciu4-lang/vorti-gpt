@@ -1,4 +1,4 @@
-# VORTIX 7.0.5 — Android energy intelligence candidate
+# VORTIX 7.0.6 — Android energy intelligence candidate
 
 VORTIX is an on-device Android battery monitoring and analysis application built with Kotlin, Jetpack Compose, Material 3, MVVM and Clean Architecture. This archive is a **working source candidate**, not a release-certified build.
 
@@ -32,7 +32,7 @@ VORTIX is an on-device Android battery monitoring and analysis application built
 | JVM target | 17 |
 | Application ID | `com.vortix.app` |
 | Shizuku API / Provider | 13.1.5 (optional advanced diagnostics) |
-| Version | `7.0.5` (`versionCode` 14) |
+| Version | `7.0.6` (`versionCode` 15) |
 
 The app module uses AGP 9 built-in Kotlin; the external `org.jetbrains.kotlin.android` plugin is not applied. The Compose compiler plugin remains pinned to the same Kotlin version.
 
@@ -69,4 +69,4 @@ GitHub Actions runs the unit tests and creates a Debug APK artifact on pushes to
 
 ## Release gate
 
-This archive includes the seven video-review remediations in `docs/VIDEO_REMEDIATION_REPORT.md`. It has not yet passed verified Gradle Sync, Kotlin/Compose compilation, KSP/Hilt/Room generation, the complete JUnit suite, APK assembly or physical-device/OEM testing for this exact 7.0.5 revision. The previously user-reported 7.0.3 CI and Pixel 5/API 30 results do not validate these new changes. Do not publish this revision until CI and representative device tests pass. See `BUILD_VALIDATION.md`, `docs/VIDEO_REMEDIATION_REPORT.md`, `docs/DRAIN_RADAR_0.3.2_WAKELOCK_NOTES.md` and `docs/SHIZUKU_SETUP.md`.
+This archive includes the six follow-up video-review remediations in `docs/VIDEO_REMEDIATION_REPORT.md`. It has not yet passed verified Gradle Sync, Kotlin/Compose compilation, KSP/Hilt/Room generation, the complete JUnit suite, APK assembly or physical-device/OEM testing for this exact 7.0.6 revision. The previously user-reported 7.0.3 CI and Pixel 5/API 30 results do not validate these new changes. Do not publish this revision until CI and representative device tests pass. See `BUILD_VALIDATION.md`, `docs/VIDEO_REMEDIATION_REPORT.md`, `docs/DRAIN_RADAR_0.3.2_WAKELOCK_NOTES.md` and `docs/SHIZUKU_SETUP.md`.

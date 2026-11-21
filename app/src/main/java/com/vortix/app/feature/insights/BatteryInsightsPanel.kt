@@ -3,6 +3,7 @@ package com.vortix.app.feature.insights
 import android.net.Uri
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -252,15 +253,23 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                UsageAccessSettingsButton(context = context, label = "Ağ kullanımı için izni aç")
             }
-            state.networkUsage?.let { network ->
-                MetricLine("Mobil veri", network.mobileBytes?.let(::formatBytes) ?: "Kullanılamıyor")
-                MetricLine("Wi-Fi", network.wifiBytes?.let(::formatBytes) ?: "Kullanılamıyor")
-                MetricLine("Mobil zaman kovası", network.mobileHistoryBuckets?.size?.toString() ?: "Sunulmadı")
-                MetricLine("Wi-Fi zaman kovası", network.wifiHistoryBuckets?.size?.toString() ?: "Sunulmadı")
-                Text(network.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } ?: Text(state.networkErrorMessage ?: "Ağ özeti henüz yüklenmedi.", style = MaterialTheme.typography.bodyMedium)
+            if (state.hasUsageAccess) {
+                val network = state.networkUsage
+                if (network != null) {
+                    MetricLine("Mobil veri", network.mobileBytes?.let(::formatBytes) ?: "Kullanılamıyor")
+                    MetricLine("Wi-Fi", network.wifiBytes?.let(::formatBytes) ?: "Kullanılamıyor")
+                    MetricLine("Mobil zaman kovası", network.mobileHistoryBuckets?.size?.toString() ?: "Sunulmadı")
+                    MetricLine("Wi-Fi zaman kovası", network.wifiHistoryBuckets?.size?.toString() ?: "Sunulmadı")
+                    Text(network.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text(state.networkErrorMessage ?: "Ağ özeti henüz yüklenmedi.", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            UsageAccessSettingsButton(
+                context = context,
+                label = if (state.hasUsageAccess) "Kullanım erişimi ayarlarını yönet" else "Ağ kullanımı için izni aç"
+            )
             OutlinedButton(onClick = viewModel::refreshNetworkUsage, modifier = Modifier.fillMaxWidth()) {
                 Text(if (state.isLoadingNetwork) "Yükleniyor…" else "Ağ verisini yenile")
             }
@@ -269,7 +278,6 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
         InsightCard(title = "Kullanılmayan uygulamalar") {
             if (!state.hasUsageAccess) {
                 Text("Uygulama kullanım geçmişi için Android Kullanım erişimi gerekir.", style = MaterialTheme.typography.bodyMedium)
-                UsageAccessSettingsButton(context = context, label = "Kullanılmayan uygulamalar için izni aç")
             } else if (state.dormantApps.isEmpty()) {
                 Text(state.dormantAppsErrorMessage ?: "14 gün veya daha uzun süredir kullanılmadığı doğrulanan uygulama bulunamadı.", style = MaterialTheme.typography.bodyMedium)
             } else {
@@ -291,6 +299,10 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
                     }
                 }
             }
+            UsageAccessSettingsButton(
+                context = context,
+                label = if (state.hasUsageAccess) "Kullanım erişimi ayarlarını yönet" else "Kullanılmayan uygulamalar için izni aç"
+            )
             Text("Bu liste kullanım geçmişine dayalı bir gözlemdir; VORTIX uygulamaları otomatik durdurmaz veya gerçek Android hibernation uygulamaz.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = viewModel::refreshDormantApps, modifier = Modifier.fillMaxWidth()) {
                 Text(if (state.isLoadingDormantApps) "Taranıyor…" else "Uygulamaları yeniden tara")
@@ -347,12 +359,8 @@ private fun UsageAccessSettingsButton(context: Context, label: String) {
 }
 
 private fun openUsageAccessSettings(context: Context) {
-    // Always open Usage Access directly; never route this action through Battery Saver settings.
-    runCatching {
-        context.startActivity(
-            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
+    if (!UsageAccessSettingsLauncher.open(context)) {
+        Toast.makeText(context, "Kullanım erişimi ayarları açılamadı.", Toast.LENGTH_LONG).show()
     }
 }
 
