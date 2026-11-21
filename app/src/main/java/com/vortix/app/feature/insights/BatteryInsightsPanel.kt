@@ -155,7 +155,7 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
                                 Box(
                                     modifier = Modifier
                                         .width(20.dp)
-                                        .height((gain.toFloat() / maxGain.toFloat()).coerceIn(0.08f, 1f) * 76.dp)
+                                        .height(76.dp * (gain.toFloat() / maxGain.toFloat()).coerceIn(0.08f, 1f))
                                         .clip(RoundedCornerShape(6.dp))
                                         .background(MaterialTheme.colorScheme.primary)
                                 )
