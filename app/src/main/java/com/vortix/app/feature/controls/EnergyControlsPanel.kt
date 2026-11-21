@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortix.app.domain.model.AppUsageItem
+import com.vortix.app.domain.model.WakelockAccessState
+import com.vortix.app.domain.model.WakelockRecord
 import com.vortix.app.feature.dashboard.GlassContainer
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -56,8 +58,15 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, viewModel) {
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            viewModel.refreshUsageApps()
+            viewModel.refreshWakelockAccess()
+        }
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshUsageApps()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshUsageApps()
+                viewModel.refreshWakelockAccess()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -341,6 +350,18 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
                         )
                     }
                 }
+                state.designCapacityMessage?.let { capacityMessage ->
+                    Text(
+                        text = capacityMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = when {
+                            state.isDesignCapacitySaveError -> MaterialTheme.colorScheme.error
+                            state.isSavingDesignCapacity -> MaterialTheme.colorScheme.secondary
+                            else -> MaterialTheme.colorScheme.primary
+                        },
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
 
@@ -403,7 +424,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
                 if (!state.hasUsageAccess) {
                     Button(
                         onClick = {
-                            safeStartActivity(context, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            openUsageAccessSettings(context)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
@@ -442,7 +463,95 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
             }
         }
 
-        // 7. System Shortcuts Card
+        // 7. Optional advanced Wakelock diagnostics (Shizuku/Sui)
+        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "GELİŞMİŞ WAKELOCK TANILAMASI",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Text(
+                    text = "Android Batterystats kayıtları son şarjdan itibaren okunur. Bu süreler uygulama başına mAh tüketimi değildir ve kilitleri otomatik kapatmaz.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                when (state.wakelockAccessState) {
+                    WakelockAccessState.SHIZUKU_NOT_RUNNING -> {
+                        Text(
+                            "İsteğe bağlı Shizuku veya Sui bağlantısı bulunamadı. Standart Radar bundan etkilenmez.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/")))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("Shizuku / Sui kurulum rehberi") }
+                    }
+                    WakelockAccessState.UNSUPPORTED_VERSION -> {
+                        Text(
+                            "Shizuku sürümü eski. UserService desteği için Shizuku API v11 veya üzeri gerekir.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                    WakelockAccessState.PERMISSION_REQUIRED -> {
+                        Text(
+                            "Shizuku bağlantısı bulundu. Wakelock tanılaması için VORTIX'e Shizuku izni vermelisin.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = viewModel::requestWakelockPermission,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("Shizuku iznini iste") }
+                    }
+                    WakelockAccessState.READY -> {
+                        OutlinedButton(
+                            onClick = viewModel::refreshWakelockDiagnostics,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !state.isLoadingWakelocks,
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text(if (state.isLoadingWakelocks) "Wakelock kayıtları okunuyor…" else "Wakelock kayıtlarını tara") }
+                    }
+                }
+
+                if (state.isLoadingWakelocks) {
+                    Text("Android Batterystats verisi salt-okunur olarak alınıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                state.wakelockErrorMessage?.let { error ->
+                    Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                if (state.wakelockRecords.isNotEmpty()) {
+                    Text(
+                        "SON ŞARJDAN BERİ · ${state.wakelockRecords.size} KAYIT",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    state.wakelockRecords.take(12).forEach { record ->
+                        WakelockDiagnosticRow(record)
+                    }
+                    Text(
+                        "Kayıtlar Android sistem istatistikleridir. Üretici/Android sürümüne göre bazı ayrıntılar bulunmayabilir.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (state.wakelockAccessState == WakelockAccessState.READY &&
+                    !state.isLoadingWakelocks && state.wakelockErrorMessage == null &&
+                    state.wakelockCapturedAtEpochMillis != null
+                ) {
+                    Text("Son şarjdan beri gösterilecek partial wakelock kaydı bulunamadı.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        // 8. System Shortcuts Card
         GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
@@ -525,6 +634,52 @@ private fun UsageAppRow(app: AppUsageItem, onOpenSettings: () -> Unit) {
     }
 }
 
+
+@Composable
+private fun WakelockDiagnosticRow(record: WakelockRecord) {
+    GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 16) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = record.packageNames.take(3).joinToString().ifBlank { "UID ${record.uid}" },
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (record.packageNames.size > 1) {
+                Text(
+                    "Ortak UID grubu · ${record.packageNames.size} paket · UID ${record.uid}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+            Text(record.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+            val duration = record.actualPartialDurationMillis ?: record.partialTimeMillis
+            Text(
+                text = "Partial süre: ${formatElapsedDuration(duration)}" +
+                    (record.partialCount?.let { " · $it kez" } ?: " · sayaç sunulmadı"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            record.backgroundPartialDurationMillis?.takeIf { it > 0L }?.let { backgroundDuration ->
+                Text(
+                    text = "Arka plan partial: ${formatElapsedDuration(backgroundDuration)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+            if (record.actualPartialDurationMillis == null) {
+                Text(
+                    "Bu Android sürümünde yalnızca paylaştırılmış süre mevcut.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 private fun formatBytes(bytes: Long?): String {
     if (bytes == null) return "—"
     val safeBytes = bytes.coerceAtLeast(0L)
@@ -539,6 +694,16 @@ private fun formatBytes(bytes: Long?): String {
     }
 }
 
+private fun openUsageAccessSettings(context: android.content.Context) {
+    // Keep this action separate from the Battery Saver shortcut below.
+    runCatching {
+        context.startActivity(
+            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
 private fun safeStartActivity(context: android.content.Context, intent: Intent) {
     runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
@@ -548,4 +713,16 @@ private fun formatDuration(milliseconds: Long): String {
     val hours = minutes / 60L
     val remainder = minutes % 60L
     return if (hours > 0L) "Bugün $hours sa $remainder dk" else "Bugün $remainder dk"
+}
+
+private fun formatElapsedDuration(milliseconds: Long): String {
+    val totalSeconds = milliseconds.coerceAtLeast(0L) / 1_000L
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return when {
+        hours > 0L -> "${hours} sa ${minutes} dk"
+        minutes > 0L -> "${minutes} dk ${seconds} sn"
+        else -> "${seconds} sn"
+    }
 }

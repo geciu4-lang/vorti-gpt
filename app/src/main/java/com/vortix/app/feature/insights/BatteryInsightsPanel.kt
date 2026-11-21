@@ -1,6 +1,7 @@
 package com.vortix.app.feature.insights
 
 import android.net.Uri
+import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,12 +21,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +48,7 @@ import kotlinx.coroutines.launch
 fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     var pendingCsv by remember { mutableStateOf<String?>(null) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
@@ -61,6 +67,18 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
     LaunchedEffect(Unit) {
         viewModel.refreshNetworkUsage()
         viewModel.refreshDormantApps()
+    }
+
+    // Re-check app-op permission after the user returns from Android Settings.
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshNetworkUsage()
+                viewModel.refreshDormantApps()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Column(
@@ -228,6 +246,14 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
         }
 
         InsightCard(title = "Ağ kullanımı · Son 24 saat") {
+            if (!state.hasUsageAccess) {
+                Text(
+                    "Uygulama bazlı ağ istatistikleri için Android Kullanım erişimi izni gerekir.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                UsageAccessSettingsButton(context = context, label = "Ağ kullanımı için izni aç")
+            }
             state.networkUsage?.let { network ->
                 MetricLine("Mobil veri", network.mobileBytes?.let(::formatBytes) ?: "Kullanılamıyor")
                 MetricLine("Wi-Fi", network.wifiBytes?.let(::formatBytes) ?: "Kullanılamıyor")
@@ -242,7 +268,8 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
 
         InsightCard(title = "Kullanılmayan uygulamalar") {
             if (!state.hasUsageAccess) {
-                Text("Uygulama kullanım geçmişi için Android Kullanım erişimi gerekir. İzin ayarları Kontrol sekmesinden açılabilir.", style = MaterialTheme.typography.bodyMedium)
+                Text("Uygulama kullanım geçmişi için Android Kullanım erişimi gerekir.", style = MaterialTheme.typography.bodyMedium)
+                UsageAccessSettingsButton(context = context, label = "Kullanılmayan uygulamalar için izni aç")
             } else if (state.dormantApps.isEmpty()) {
                 Text(state.dormantAppsErrorMessage ?: "14 gün veya daha uzun süredir kullanılmadığı doğrulanan uygulama bulunamadı.", style = MaterialTheme.typography.bodyMedium)
             } else {
@@ -306,6 +333,26 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun UsageAccessSettingsButton(context: Context, label: String) {
+    OutlinedButton(
+        onClick = { openUsageAccessSettings(context) },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(label)
+    }
+}
+
+private fun openUsageAccessSettings(context: Context) {
+    // Always open Usage Access directly; never route this action through Battery Saver settings.
+    runCatching {
+        context.startActivity(
+            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 }
 

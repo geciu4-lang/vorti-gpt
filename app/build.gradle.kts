@@ -13,13 +13,21 @@ android {
         applicationId = "com.vortix.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "7.0.3"
+        versionCode = 14
+        versionName = "7.0.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        getByName("release") {
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
     }
 
     buildFeatures {
         compose = true
+        aidl = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -59,6 +67,8 @@ dependencies {
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.hilt.work)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

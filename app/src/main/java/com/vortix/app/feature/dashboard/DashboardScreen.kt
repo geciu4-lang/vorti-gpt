@@ -114,7 +114,9 @@ fun DashboardScreen(
                     .padding(top = pad.calculateTopPadding())
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .padding(bottom = 110.dp),
+                    // Scaffold reserves the dock area; keep an additional scrollable gap
+                    // so the final card can never slide underneath the opaque navigation capsule.
+                    .padding(bottom = pad.calculateBottomPadding() + 20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 AmbientTopBar(isAlert, uiState.isRefreshing)
@@ -189,7 +191,7 @@ private fun AmbientTopBar(isAlert: Boolean, isRefreshing: Boolean) {
             color = if (isAlert) VortixError.copy(alpha = 0.16f) else GlassPillActive,
             border = BorderStroke(1.dp, if (isAlert) VortixError.copy(alpha = 0.5f) else VortixPrimary.copy(alpha = 0.45f))
         ) {
-            Text(if (isAlert) "UYARI" else "CANLI", style = MaterialTheme.typography.labelSmall,
+            Text(if (isAlert) "UYARI" else "NORMAL", style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold, color = if (isAlert) VortixError else VortixPrimary,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
         }
@@ -308,7 +310,7 @@ private fun BatteryHealthDiagnosticsCard(summary: PowerInsightSummary?, designMa
 private fun MetricGrid(s: BatterySnapshot) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SensorTile("ANLIK AKIM", s.currentNowMicroAmps?.let { String.format(Locale.getDefault(), "%.0f mA", it / 1000.0) } ?: "—", VortixPrimary, Modifier.weight(1f))
+            SensorTile("ANLIK AKIM", formatCurrentMilliAmps(s.currentNowMicroAmps), VortixPrimary, Modifier.weight(1f))
             SensorTile("GERİLİM", s.voltageMillivolts?.let { String.format(Locale.getDefault(), "%.2f V", it / 1000.0) } ?: "—", VortixSecondary, Modifier.weight(1f))
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -361,28 +363,53 @@ private fun VortexApexIntelligenceCard(
 
 @Composable
 private fun BatteryHistoryChartCard(snaps: List<BatterySnapshot>, onClear: () -> Unit) {
-    val ord = remember(snaps) { snaps.sortedBy { it.capturedAtEpochMillis }.takeLast(24) }
+    val summary = remember(snaps) { summarizeBatteryHistory(snaps) }
+    val timeFormatter = remember { SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()) }
     GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 24) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("SON ÖLÇÜMLER (${ord.size})", style = MaterialTheme.typography.labelLarge,
+                Text("SON ÖLÇÜMLER (${summary.points.size})", style = MaterialTheme.typography.labelLarge,
                     color = VortixOnSurfaceVariant)
                 TextButton(onClick = onClear) {
                     Text("Temizle", style = MaterialTheme.typography.labelSmall, color = VortixError)
                 }
             }
-            Canvas(modifier = Modifier.fillMaxWidth().height(90.dp)) {
-                val levels = ord.mapNotNull { it.levelPercent?.toFloat() }
-                if (levels.size >= 2) {
-                    val step = size.width / (levels.size - 1).coerceAtLeast(1)
-                    val path = Path()
-                    levels.forEachIndexed { index, level ->
-                        val x = index * step
-                        val y = size.height * (1f - (level.coerceIn(0f, 100f) / 100f))
-                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            if (summary.points.isEmpty()) {
+                Text("Grafik için geçerli pil seviyesi ölçümü bulunamadı.",
+                    style = MaterialTheme.typography.bodySmall, color = VortixOnSurfaceVariant)
+            } else {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        summary.startAtEpochMillis?.let { "Başlangıç · ${timeFormatter.format(Date(it))}" } ?: "Başlangıç · —",
+                        style = MaterialTheme.typography.labelSmall, color = VortixOnSurfaceVariant
+                    )
+                    Text(
+                        summary.endAtEpochMillis?.let { "Bitiş · ${timeFormatter.format(Date(it))}" } ?: "Bitiş · —",
+                        style = MaterialTheme.typography.labelSmall, color = VortixOnSurfaceVariant
+                    )
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Min · ${summary.minimumLevelPercent?.let { "%$it" } ?: "—"}",
+                        style = MaterialTheme.typography.labelMedium, color = VortixTertiary)
+                    Text("Maks · ${summary.maximumLevelPercent?.let { "%$it" } ?: "—"}",
+                        style = MaterialTheme.typography.labelMedium, color = VortixPrimary)
+                }
+                Canvas(modifier = Modifier.fillMaxWidth().height(90.dp)) {
+                    val points = summary.points
+                    if (points.size == 1) {
+                        val y = size.height * (1f - points.first().levelPercent / 100f)
+                        drawCircle(VortixPrimary, radius = 4.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width / 2f, y))
+                    } else if (points.size >= 2) {
+                        val step = size.width / (points.size - 1).coerceAtLeast(1)
+                        val path = Path()
+                        points.forEachIndexed { index, point ->
+                            val x = index * step
+                            val y = size.height * (1f - (point.levelPercent / 100f))
+                            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        }
+                        drawPath(path, VortixPrimary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
                     }
-                    drawPath(path, VortixPrimary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
                 }
             }
         }
@@ -436,7 +463,8 @@ private fun AmbientGlassDockBar(sel: Int, onSel: (Int) -> Unit, onRef: () -> Uni
     Box(modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center) {
         Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(32.dp),
-            color = Color(0xE0131A26), border = BorderStroke(1.dp, GlassBorderHighlight), tonalElevation = 12.dp) {
+            // Fully opaque to prevent scroll content from showing through the dock.
+            color = Color(0xFF080D14), border = BorderStroke(1.dp, GlassBorderHighlight), tonalElevation = 0.dp) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 DockNavPill("Özet", "⌂", sel == 0, { onSel(0) }, Modifier.weight(1f)); Spacer(Modifier.width(6.dp))

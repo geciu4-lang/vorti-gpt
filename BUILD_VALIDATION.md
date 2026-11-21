@@ -70,3 +70,55 @@ Not verified in this environment: Gradle configuration, Android Studio sync, Kot
 - The full Gradle test task was attempted but could not start: the Gradle bootstrap could not resolve `services.gradle.org`. The workspace has JDK 21 and `kotlinc`, but no Android SDK, Android Studio, `adb` or cached Gradle distribution.
 
 Still not verified for this exact 7.0.3 source: Android/Kotlin/Compose compilation, KSP/Hilt/Room generation, the complete JUnit suite, APK assembly, API 26–37 behavior or physical-device/OEM behavior. The source is a build candidate, not a certified release.
+
+
+## VORTIX 7.0.4 — Drain Radar 0.3.2 Wakelock diagnostics (candidate)
+
+### Source changes
+
+- Added an optional Shizuku/Sui integration using the UserService + AIDL pattern.
+- The user-service executes only `/system/bin/dumpsys -t 15 batterystats --charged --checkin`, filters `wl`/`awl` rows, caps the Binder payload, and returns read-only data.
+- Added a version-aware parser for check-in v18, v19–20, v21 and v22+ rows, including quoted tags, UID/tag aggregation and aggregate fallback.
+- Added UI states for missing Shizuku, old Shizuku version, permission required, ready, loading and failure. The normal UsageStats/NetworkStats radar remains usable without Shizuku.
+- Added ViewModel tests for the ready and unavailable paths and parser tests for supported row formats.
+- Preserved `.github/workflows/build.yml` in this candidate and the reported `76.dp * Float` correction in `BatteryInsightsPanel.kt`.
+
+### Checks in this workspace
+
+- Pure Kotlin parser tests: all 8 `BatteryStatsWakelockParserTest` cases passed with local `kotlinc` (JDK 21), including Shizuku transport row filtering, v18, v19–20, v21, v22+, quoted tags, duplicate aggregation and aggregate fallback.
+- Kotlin syntax/API-shape checks: Shizuku UserService and repository compiled locally against minimal Android/Shizuku test stubs; this catches Kotlin syntax and the modeled API contract, not Android SDK or generated AIDL integration.
+- Source inspection: reviewed AIDL, manifest provider declaration, dependency coordinates, Hilt binding, ViewModel injection, permission-state handling, output bounds and read-only command.
+- Gradle/JUnit/Android assembly: not executed. This workspace has no Android SDK or installed/cached Gradle distribution and cannot resolve `services.gradle.org`.
+- Shizuku runtime check: not executed; requires a real device with Shizuku/Sui set up and permission approved.
+
+### CI baseline caveat
+
+The available 7.0.3 archive contained `.github/workflows/android-ci.yml`, not the user-reported `.github/workflows/build.yml`, and carried the pre-fix `Float * Dp` expression. This 7.0.4 candidate reconstructs a single `.github/workflows/build.yml` from the existing workflow and retains the reported Dp correction. The exact workflow file and repository state from the user's successful run `44911935628` were not supplied in this workspace; compare/merge this candidate with that canonical GitHub branch before replacing the user's repository.
+
+### User-reported baseline evidence (7.0.3 only)
+
+The user reported GitHub Actions run `44911935628` passed `:app:testDebugUnitTest` and `:app:assembleDebug`, and Firebase Test Lab Pixel 5/API 30 passed the Summary, Controls and Radar flows with safe Usage Access denial behavior. These results apply to the user's 7.0.3 repository revision, not this 7.0.4 Shizuku candidate.
+
+### Required validation for this candidate
+
+```bash
+./gradlew :app:testDebugUnitTest
+./gradlew :app:assembleDebug
+```
+
+On a representative Android 11/API 30 device and a recent Android release, test Shizuku unavailable, binder missing/reconnected, permission denied/granted, API version too old, empty stats, v18/v19/v21/v22+ output, large output, binder disconnect and service timeout. Verify the standard radar still works when Shizuku is absent.
+
+
+## VORTIX 7.0.5 — Seven video-review remediations
+
+- Corrected/locked the Controls Radar permission action to `Settings.ACTION_USAGE_ACCESS_SETTINGS`; the separate Battery Saver action remains explicitly `Settings.ACTION_BATTERY_SAVER_SETTINGS`.
+- Made the bottom navigation capsule fully opaque and replaced fixed scroll clearance with Scaffold bottom-bar padding plus a small safety gap.
+- Added Usage Access buttons to both Radar-tab Network Usage and Dormant Apps cards and refreshes both data sources on activity resume.
+- Added signed-current formatting that normalizes values rounding to zero to `0 mA`.
+- Serialized design-capacity writes, ignored stale pending writes, and connected selected value plus confirmation message to the same ViewModel state.
+- Added start/end timestamps and min/max percentages to the battery history chart.
+- Replaced the passive `CANLI` status label with `NORMAL`; `UYARI` appears only while an alert is active.
+- Added six pure formatter/chart tests and a rapid-capacity-selection regression test.
+- Bumped the application version to 7.0.5 / versionCode 14 and retained `.github/workflows/build.yml`, the 76.dp multiplier correction and the 7.0.4 Shizuku sources.
+
+Not run in this workspace: full Gradle/Android compilation, complete JUnit suite, APK assembly and Firebase Test Lab for this exact 7.0.5 archive. The exact revision still needs CI and device verification.
