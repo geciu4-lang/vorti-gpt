@@ -25,6 +25,7 @@ private val VortixDarkColorScheme = darkColorScheme(
 fun VortixTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = VortixDarkColorScheme,
+        typography = VortixTypography,
         content = content
     )
 }

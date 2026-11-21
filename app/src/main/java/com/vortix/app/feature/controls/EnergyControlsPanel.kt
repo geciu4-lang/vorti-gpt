@@ -20,8 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortix.app.domain.model.AppUsageItem
+import com.vortix.app.feature.dashboard.GlassContainer
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -117,16 +117,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
         }
 
         // 1. Charge Limit Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(
-                1.dp,
-                if (state.isChargeLimitEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-            ),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
+        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22, highlighted = state.isChargeLimitEnabled) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -208,12 +199,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
         }
 
         // 2. Low Battery Alarm Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
+        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -275,12 +261,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
         }
 
         // 3. Thermal Guard Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
+        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -335,12 +316,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
         }
 
         // 4. Design Capacity Calibration Card (for Health % calculation)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
+        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = "Nominal Tasarım Kapasitesi",
@@ -369,12 +345,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
         }
 
         // 5. Background Telemetry & Eco Guard Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
+        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -417,12 +388,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
         }
 
         // 6. Vortex Drain Radar Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
+        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     text = "Vortex Drain Radar",
@@ -430,7 +396,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Bugün ön planda en çok çalışan uygulamaları listeler ve doğrudan uyutma/pil ayarlarına erişim sağlar.",
+                    text = "Ön plan süresi bugüne aittir. Mobil ve Wi-Fi verileri son 24 saatlik sorgu aralığındaki saatlik sistem kayıtlarından gelir; uygulama başına mAh veya kesin pil tüketimi değildir.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -443,10 +409,15 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
                         shape = RoundedCornerShape(14.dp)
                     ) { Text("Kullanım erişimi iznini aç") }
                 } else {
+                    Text(
+                        text = "Ön plan: bugün · Ağ: son 24 saatlik sorgu aralığı (saatlik kovalar) · Sıralama pil tüketimi değildir.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     if (state.isLoadingUsage) {
-                        Text("Uygulama verileri taranıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Kullanım ve ağ istatistikleri taranıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else if (state.topApps.isEmpty()) {
-                        Text("Bugün için kayıtlı kullanım bulunamadı.")
+                        Text("Görüntülenecek kullanım veya UID ağ trafiği kaydı bulunamadı.")
                     } else {
                         state.topApps.forEach { app ->
                             UsageAppRow(
@@ -472,11 +443,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
         }
 
         // 7. System Shortcuts Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
+        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = "Hızlı Sistem Kontrolleri",
@@ -509,33 +476,66 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
 
 @Composable
 private fun UsageAppRow(app: AppUsageItem, onOpenSettings: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 16) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
                 Text(
                     text = app.displayName,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = formatDuration(app.foregroundTimeMillis),
+                    text = if (app.foregroundTimeMillis > 0L) {
+                        formatDuration(app.foregroundTimeMillis)
+                    } else {
+                        "Bugün ön plan kullanımı kaydedilmedi"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
+                Text(
+                    text = if (app.mobileBytes == null && app.wifiBytes == null) {
+                        "Ağ istatistiği bu cihazda sunulamadı"
+                    } else {
+                        "Mobil ${formatBytes(app.mobileBytes)}  ·  Wi-Fi ${formatBytes(app.wifiBytes)}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (app.hasSharedUidTraffic) {
+                    Text(
+                        text = "Ortak UID: en az ${app.sharedUidPackageCount} görünür paket aynı ağ toplamını paylaşır; tek uygulamaya atanamaz.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
             }
             Spacer(Modifier.width(8.dp))
             OutlinedButton(
                 onClick = onOpenSettings,
                 shape = RoundedCornerShape(10.dp)
-            ) { Text("Uyut / Ayar") }
+            ) { Text("Ayarlar") }
         }
+    }
+}
+
+private fun formatBytes(bytes: Long?): String {
+    if (bytes == null) return "—"
+    val safeBytes = bytes.coerceAtLeast(0L)
+    val kib = 1024.0
+    val mib = kib * 1024.0
+    val gib = mib * 1024.0
+    return when {
+        safeBytes >= gib -> String.format(Locale.getDefault(), "%.2f GB", safeBytes / gib)
+        safeBytes >= mib -> String.format(Locale.getDefault(), "%.1f MB", safeBytes / mib)
+        safeBytes >= kib -> String.format(Locale.getDefault(), "%.1f KB", safeBytes / kib)
+        else -> "$safeBytes B"
     }
 }
 

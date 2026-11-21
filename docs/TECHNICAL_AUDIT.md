@@ -39,3 +39,15 @@
 - Release build signing, artifact integrity and same-revision CI.
 
 **Release decision: NOT APPROVED.** Source fixes do not replace executable build, test and device evidence.
+
+## 7.0.3 — Drain Radar 0.3.1 incremental review
+
+- Reused the existing `AndroidUsageStatsDataSource` / `UsageStatsRepository` / `EnergyControlsViewModel` flow; no new Hilt binding, database table, worker or permission was added.
+- Combined current-day foreground usage with mobile/Wi-Fi UID traffic from a rolling 24-hour query interval. Network details are queried on `Dispatchers.IO`.
+- UID byte aggregation guards negative counters and `Long` overflow. A successful query with no matching UID bucket is represented as zero; a failed/unavailable transport remains `null`.
+- Shared visible package UIDs are explicitly marked in the UI; their network totals are not divided or falsely attributed to individual packages.
+- `UsageStats.appLaunchCount` was deliberately excluded because it is not a public third-party SDK API.
+- Historical network buckets are hour-scale and do not interpolate partial boundary buckets. They are not live traffic or battery measurements.
+- Shizuku/wakelock diagnostics are not part of this increment; a later opt-in feature requires capability and permission checks before use.
+
+**Verification:** pure Kotlin smoke checks passed for the accumulator and domain model. Full Gradle tests, Android compile, APK assembly and device validation were not run because the Gradle distribution host could not be resolved and no Android SDK is installed in the authoring environment.

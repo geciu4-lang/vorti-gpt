@@ -1,41 +1,56 @@
-# VORTIX 7.0.1 — Test report
+# VORTIX 7.0.3 — Test report
 
-**Execution status: NOT RUN in this environment.** Test source files are not evidence of a passing test run.
+**Execution status: PARTIAL SOURCE-LEVEL CHECKS ONLY.** A source file or test existing in the archive is not evidence of a passing Gradle/JUnit run.
 
-## Test source inventory
+## Added / updated test coverage
 
 | Test class | Focus | Execution status |
 |---|---|---|
-| `BatterySampleMapperTest` | Domain ↔ Room mapping | Not run |
-| `BatteryRepositoryImplTest` | Insert, observe, prune and clear-history behavior | Not run |
-| `RefreshBatterySnapshotUseCaseTest` | Refresh use case | Not run |
-| `DashboardViewModelTest` | Initial refresh and failure state | Not run |
-| `EnergyControlsViewModelTest` | Monitoring, target clamping and UsageStats | Not run |
-| `BatteryAnalyticsEngineTest` | Capacity, drain, sessions, thermal exposure and personal baseline | Not run |
-| `BatterySnapshotTest` | Signed power derivation and unavailable values | Not run |
-| `BatteryHistoryCsvTest` | CSV formatting and escaping | Not run |
-| `PowerAdvisorEngineTest` | Evidence-gated recommendations, including Eco Guard threshold | Not run |
+| `UidTrafficAccumulatorTest` | UID aggregation across buckets, negative UID/counter handling and overflow saturation | Not run through Gradle/JUnit |
+| `AppUsageItemTest` | Available vs unavailable network totals, overflow protection and shared UID marker | Not run through Gradle/JUnit |
+| `EnergyControlsViewModelTest` | Usage Access gating and existing controls behavior | Not run through Gradle/JUnit |
+| `BatteryAnalyticsEngineTest` | Capacity, drain, sessions, thermal exposure and personal baseline | Not run through Gradle/JUnit |
+| `PowerAdvisorEngineTest` | Evidence-gated recommendations, including Eco Guard threshold | Not run through Gradle/JUnit |
+| Remaining existing mapper, repository, use-case, dashboard and CSV tests | Existing behavior regression coverage | Not run through Gradle/JUnit |
 
-## Required commands
+## Executed check
+
+A standalone Kotlin compiler smoke harness compiled `UidTrafficAccumulator.kt` and `AppUsageItem.kt` and passed assertions for:
+
+- Aggregation of receive/transmit bytes by UID.
+- Clamping negative byte counters.
+- Zero traffic versus unavailable traffic semantics.
+- Shared UID metadata.
+- `Long` overflow saturation.
+
+Result: **PASS** for these pure-Kotlin source components only. This does not validate Android framework access or Compose code.
+
+## Gradle / Android validation
+
+Attempted:
+
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
+The Gradle 9.6.1 bootstrap failed because `services.gradle.org` could not be resolved. The environment has JDK 21 and the Kotlin compiler but no configured Android SDK/Android Studio/adb and no cached Gradle distribution. Consequently the Android build and test suite could not run.
+
+Required on Android Studio or a connected CI runner with JDK 21 and Android SDK Platform 37 / Build Tools 37.0.0:
 
 ```bash
 ./gradlew :app:testDebugUnitTest
 ./gradlew :app:assembleDebug
 ```
 
-## Environment blocker
-
-JDK 21 and standalone `kotlinc` are present. Android SDK, Android Studio, `adb`, installed Gradle and cached Gradle 9.6.1 are absent. The wrapper distribution download cannot complete because external network/DNS access is unavailable. Therefore Kotlin/Compose Android compilation, KSP/Hilt/Room generation, JUnit execution and APK assembly have not been verified.
-
 ## Device validation still required
 
-- API 26, 29, 31, 33, 34, 36 and 37 compatibility coverage where available.
-- Pixel/AOSP-like, Samsung One UI and Xiaomi/HyperOS background-policy comparisons.
-- BatteryManager values against Android system battery status.
-- Usage Access and notification permission denied/granted paths.
-- WorkManager scheduling, cancellation, process death, reboot and Doze.
-- Room v1→v2 migration with retained user history.
-- Widget and Quick Settings Tile behavior.
-- Battery history export and user-controlled sharing.
+- API 26, 29, 30, 31, 33, 34 and target-36/37-compatible devices where available.
+- Usage Access grant/deny/revoke behavior.
+- Mobile and Wi-Fi data on dual-SIM, Wi-Fi-only, mobile-only and offline devices.
+- Empty/unsupported NetworkStats responses and exact zero-byte entries.
+- Shared UID package behavior and package visibility differences.
+- Performance impact of NetworkStats queries on worker threads.
+- Pixel/AOSP-like, Samsung One UI and Xiaomi/HyperOS behavior.
+- Existing WorkManager, Room migration, widget, Quick Settings Tile and battery analytics regressions.
 
-**Test verdict: NOT CERTIFIED.**
+**Test verdict: NOT BUILD-CERTIFIED.** The earlier user-reported Firebase Test Lab pass applies to their previous working app revision, not this 7.0.3 archive.

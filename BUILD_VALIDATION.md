@@ -59,3 +59,14 @@ Static follow-up checks:
 - Confirmed the app continues to configure JVM target 17 using `kotlin.compilerOptions`.
 
 Not verified in this environment: Gradle configuration, Android Studio sync, Kotlin/Compose compilation, KSP/Hilt/Room code generation, unit tests, APK assembly or device execution. The Android SDK is not installed here. The next required user-side checks remain `:app:testDebugUnitTest` and `:app:assembleDebug`.
+
+## VORTIX 7.0.3 — Drain Radar 0.3.1 update
+
+- The source update adds UID-grouped mobile/Wi-Fi traffic to the existing UsageStats-backed radar and preserves the existing `UsageStatsRepository` Hilt binding.
+- Foreground duration is current-local-day UsageStats data. Network traffic comes from a rolling 24-hour `NetworkStatsManager` query and Android hour-scale history buckets; partial boundary buckets may be omitted.
+- Shared visible package UIDs are flagged; their network bytes are shared totals and are not split between packages.
+- No app-level mAh estimate, battery-drain ranking, wakelock claim, force-stop or hibernation action is introduced.
+- Pure Kotlin smoke checks for UID byte aggregation, null-vs-zero network totals, shared UID marking and overflow saturation passed with the local Kotlin compiler.
+- The full Gradle test task was attempted but could not start: the Gradle bootstrap could not resolve `services.gradle.org`. The workspace has JDK 21 and `kotlinc`, but no Android SDK, Android Studio, `adb` or cached Gradle distribution.
+
+Still not verified for this exact 7.0.3 source: Android/Kotlin/Compose compilation, KSP/Hilt/Room generation, the complete JUnit suite, APK assembly, API 26–37 behavior or physical-device/OEM behavior. The source is a build candidate, not a certified release.
