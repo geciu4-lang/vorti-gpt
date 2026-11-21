@@ -13,8 +13,8 @@ android {
         applicationId = "com.vortix.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "7.1.2"
+        versionCode = 19
+        versionName = "7.1.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

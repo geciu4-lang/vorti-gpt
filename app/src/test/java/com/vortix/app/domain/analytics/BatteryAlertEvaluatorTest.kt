@@ -20,6 +20,27 @@ class BatteryAlertEvaluatorTest {
         ).isEmpty())
     }
 
+    @Test fun subThreshold33Point6DegreeSnapshotWithThermalNoneShowsNormalEvenIfOemHealthFlagIsLatched() {
+        val normal = snapshot(temperature = 33.6).copy(
+            thermalStatus = SystemThermalStatus.NONE,
+            health = BatteryHealth.OVERHEAT
+        )
+        assertTrue(BatteryAlertEvaluator.activeAlertReasons(
+            normal, true, 40, false, 20, false, 80
+        ).isEmpty())
+    }
+
+    @Test fun overheatHealthRemainsFallbackWarningWhenTemperatureIsUnavailable() {
+        val unknownTemperature = snapshot().copy(
+            temperatureCelsius = null,
+            thermalStatus = SystemThermalStatus.NONE,
+            health = BatteryHealth.OVERHEAT
+        )
+        assertTrue(BatteryAlertEvaluator.activeAlertReasons(
+            unknownTemperature, true, 40, false, 20, false, 80
+        ).any { it.contains("sıcaklık ölçümü yok") })
+    }
+
     @Test fun alertBadgeReasonExplainsReachedChargeTarget() {
         val reasons = BatteryAlertEvaluator.activeAlertReasons(
             snapshot(level = 80, status = BatteryStatus.CHARGING, source = PluggedSource.AC),
@@ -50,9 +71,10 @@ class BatteryAlertEvaluatorTest {
         ))
     }
 
-    @Test fun androidOverheatHealthTriggersAlertEvenWithoutCustomThreshold() {
+    @Test fun androidOverheatHealthIsFallbackAlertWhenTemperatureIsUnavailable() {
         assertTrue(BatteryAlertEvaluator.hasActiveAlert(
-            snapshot().copy(health = BatteryHealth.OVERHEAT), false, 42, false, 20, false, 80
+            snapshot().copy(temperatureCelsius = null, health = BatteryHealth.OVERHEAT),
+            false, 42, false, 20, false, 80
         ))
     }
 

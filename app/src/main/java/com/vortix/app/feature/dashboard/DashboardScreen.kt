@@ -204,77 +204,115 @@ private fun AmbientTopBar(
     thermalStatus: Int?,
     alertReason: String?
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(
-                modifier = Modifier.size(36.dp).clip(CircleShape)
-                    .background(if (isAlert) VortixError else VortixPrimary),
-                contentAlignment = Alignment.Center
-            ) { Text("⚡", color = VortixBackground, fontWeight = FontWeight.Black, fontSize = 16.sp) }
-            Column {
-                Text("VORTIX", style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold, letterSpacing = 1.6.sp)
-                Text(if (isRefreshing) "GÜNCELLENİYOR…" else "AMBIENT ENERGY OS",
-                    style = MaterialTheme.typography.labelSmall, color = VortixOnSurfaceVariant)
-                val wear = com.vortix.app.domain.analytics.BatteryThermalWearAnalyzer.assess(temperatureCelsius)
-                if (wear != null) {
-                    val thermalLabel = com.vortix.app.domain.analytics.SystemThermalStatus.label(thermalStatus)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // The flexible title block yields space to the status badge on narrow screens.
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier.size(36.dp).clip(CircleShape)
+                        .background(if (isAlert) VortixError else VortixPrimary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("⚡", color = VortixBackground, fontWeight = FontWeight.Black, fontSize = 16.sp)
+                }
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "TERMAL $thermalLabel  ·  KİMYASAL AŞINMA ×${String.format(java.util.Locale.US, "%.1f", wear.multiplier)} ${wear.label.uppercase(java.util.Locale.getDefault())}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = when {
-                            com.vortix.app.domain.analytics.SystemThermalStatus.isWarning(thermalStatus) || wear.multiplier >= 2.4 -> VortixError
-                            wear.multiplier >= 1.5 -> VortixTertiary
-                            else -> VortixOnSurfaceVariant
-                        }
+                        "VORTIX",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 1.6.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        "Yaklaşık termal gösterge; pil ömrü ölçümü değildir.",
+                        if (isRefreshing) "GÜNCELLENİYOR…" else "AMBIENT ENERGY OS",
                         style = MaterialTheme.typography.labelSmall,
-                        color = VortixOnSurfaceVariant
+                        color = VortixOnSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    val wear = com.vortix.app.domain.analytics.BatteryThermalWearAnalyzer.assess(temperatureCelsius)
+                    if (wear != null) {
+                        val thermalLabel = com.vortix.app.domain.analytics.SystemThermalStatus.label(thermalStatus)
+                        Text(
+                            "TERMAL $thermalLabel  ·  KİMYASAL AŞINMA ×${String.format(java.util.Locale.US, "%.1f", wear.multiplier)} ${wear.label.uppercase(java.util.Locale.getDefault())}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when {
+                                com.vortix.app.domain.analytics.SystemThermalStatus.isWarning(thermalStatus) || wear.multiplier >= 2.4 -> VortixError
+                                wear.multiplier >= 1.5 -> VortixTertiary
+                                else -> VortixOnSurfaceVariant
+                            },
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            "Yaklaşık termal gösterge; pil ömrü ölçümü değildir.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VortixOnSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
-        }
-        val badgeColor = when {
-            !isStatusKnown -> VortixOnSurfaceVariant
-            isAlert -> VortixError
-            else -> VortixPrimary
-        }
-        Surface(
-            modifier = Modifier.widthIn(max = 148.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = badgeColor.copy(alpha = 0.16f),
-            border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.55f))
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+
+            val badgeColor = when {
+                !isStatusKnown -> VortixOnSurfaceVariant
+                isAlert -> VortixError
+                else -> VortixPrimary
+            }
+            Surface(
+                modifier = Modifier.widthIn(min = 76.dp, max = 108.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = badgeColor.copy(alpha = 0.16f),
+                border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.55f))
             ) {
-                Text(
-                    when {
-                        !isStatusKnown -> "ÖLÇÜLÜYOR"
-                        isAlert -> "UYARI"
-                        else -> "NORMAL"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = badgeColor
-                )
-                if (isAlert && !alertReason.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        alertReason,
+                        when {
+                            !isStatusKnown -> "ÖLÇÜLÜYOR"
+                            isAlert -> "UYARI"
+                            else -> "NORMAL"
+                        },
                         style = MaterialTheme.typography.labelSmall,
-                        color = VortixError,
-                        maxLines = 2,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor,
+                        maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
+        }
+
+        if (isAlert && !alertReason.isNullOrBlank()) {
+            Text(
+                alertReason,
+                modifier = Modifier.padding(start = 46.dp, end = 4.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = VortixError,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

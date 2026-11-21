@@ -24,7 +24,13 @@ object BatteryAlertEvaluator {
         val plugged = snapshot.pluggedSource != PluggedSource.NONE &&
             snapshot.pluggedSource != PluggedSource.UNKNOWN
         return buildList {
-            if (snapshot.health == BatteryHealth.OVERHEAT) add("Android pil sağlık durumu aşırı sıcak bildiriyor")
+            // Some OEM battery intents can keep BATTERY_HEALTH_OVERHEAT latched briefly
+            // after the reported cell temperature has returned to a normal range. Prefer
+            // the measured temperature and Android thermal-status signal when available;
+            // retain the platform-health fallback only when no temperature was supplied.
+            if (snapshot.health == BatteryHealth.OVERHEAT && temperature == null) {
+                add("Android pil sağlık durumu aşırı sıcak bildiriyor (sıcaklık ölçümü yok)")
+            }
             if (SystemThermalStatus.isWarning(snapshot.thermalStatus)) {
                 add("Sistem termal durumu ${SystemThermalStatus.label(snapshot.thermalStatus)}")
             }
