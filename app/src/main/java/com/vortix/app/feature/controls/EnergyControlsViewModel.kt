@@ -34,6 +34,7 @@ class EnergyControlsViewModel @Inject constructor(
     // serialize persistence, and skip stale writes that have not started yet.
     private val designCapacityWriteMutex = Mutex()
     private var designCapacityRequestSequence: Long = 0L
+    private var designCapacityFeedbackSequence: Long = 0L
     private var pendingDesignCapacityRequestId: Long? = null
     private var pendingDesignCapacityMah: Int? = null
     private var persistedDesignCapacityMah: Int = 0
@@ -233,12 +234,14 @@ class EnergyControlsViewModel @Inject constructor(
     fun setDesignCapacityMah(capacityMah: Int) {
         val safeCap = capacityMah.coerceIn(1500, 12000)
         val requestId = ++designCapacityRequestSequence
+        val feedbackId = ++designCapacityFeedbackSequence
         pendingDesignCapacityRequestId = requestId
         pendingDesignCapacityMah = safeCap
         _uiState.update {
             it.copy(
                 designCapacityMah = safeCap,
                 designCapacityMessage = "$safeCap mAh kaydediliyor…",
+                designCapacityFeedbackId = feedbackId,
                 message = "$safeCap mAh referans kapasitesi kaydediliyor…",
                 isSavingDesignCapacity = true,
                 isDesignCapacitySaveError = false

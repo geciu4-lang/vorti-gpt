@@ -93,8 +93,28 @@ class EnergyControlsViewModelTest {
         assertEquals(6_000, viewModel.uiState.value.designCapacityMah)
         assertEquals("Referans kapasite 6000 mAh olarak kaydedildi.", viewModel.uiState.value.designCapacityMessage)
         assertEquals("Referans kapasite 6000 mAh olarak kaydedildi.", viewModel.uiState.value.message)
+        assertEquals(3L, viewModel.uiState.value.designCapacityFeedbackId)
         assertFalse(viewModel.uiState.value.isSavingDesignCapacity)
         assertFalse(viewModel.uiState.value.isDesignCapacitySaveError)
+    }
+
+    @Test
+    fun failedDesignCapacityWriteShowsErrorInsteadOfSuccess() = runTest(dispatcher) {
+        val settings = FakeSettings(failDesignCapacityWrites = true)
+        val viewModel = EnergyControlsViewModel(
+            settings, FakeScheduler(), FakeUsageStats(), FakeWakelockDiagnostics()
+        )
+        runCurrent()
+
+        viewModel.setDesignCapacityMah(7_000)
+        runCurrent()
+
+        assertEquals("Kapasite kaydedilemedi; son kayıtlı değer korundu.", viewModel.uiState.value.message)
+        assertEquals("Kapasite kaydedilemedi; son kayıtlı değer korundu.", viewModel.uiState.value.designCapacityMessage)
+        assertEquals(1L, viewModel.uiState.value.designCapacityFeedbackId)
+        assertTrue(viewModel.uiState.value.isDesignCapacitySaveError)
+        assertFalse(viewModel.uiState.value.isSavingDesignCapacity)
+        assertTrue(settings.designCapacityWrites.isEmpty())
     }
 
     @Test
@@ -160,7 +180,10 @@ class EnergyControlsViewModelTest {
         assertFalse(viewModel.uiState.value.isLoadingWakelocks)
     }
 
-    private class FakeSettings(initialEnabled: Boolean = false) : EnergySettingsRepository {
+    private class FakeSettings(
+        initialEnabled: Boolean = false,
+        private val failDesignCapacityWrites: Boolean = false
+    ) : EnergySettingsRepository {
         val enabled = MutableStateFlow(initialEnabled)
         val target = MutableStateFlow(80)
         val alertSent = MutableStateFlow(false)
@@ -192,6 +215,7 @@ class EnergyControlsViewModelTest {
         override suspend fun setThermalAlertSent(sent: Boolean) = Unit
         override suspend fun setEcoGuardEnabled(enabled: Boolean) = Unit
         override suspend fun setDesignCapacityMah(capacityMah: Int) {
+            if (failDesignCapacityWrites) error("Simulated capacity write failure")
             designCapacityWrites += capacityMah
             designCapacity.value = capacityMah
         }

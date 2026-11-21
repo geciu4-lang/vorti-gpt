@@ -15,6 +15,8 @@ data class EnergyControlsUiState(
     val isEcoGuardEnabled: Boolean = false,
     val designCapacityMah: Int = 5000,
     val designCapacityMessage: String? = null,
+    // Monotonic event ID lets the UI replay banner feedback for every capacity selection.
+    val designCapacityFeedbackId: Long = 0L,
     val isSavingDesignCapacity: Boolean = false,
     val isDesignCapacitySaveError: Boolean = false,
     val hasUsageAccess: Boolean = false,

@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -527,15 +528,17 @@ private fun formatPowerText(limit: Boolean, target: Int, watts: Double?): String
 private fun AmbientGlassDockBar(sel: Int, onSel: (Int) -> Unit, onRef: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxWidth()
-            // Opaque full-width dock backdrop prevents scroll content showing around the capsule.
-            .background(Color(0xFF070B10))
+            // Keep the dock above the scroll layer and fully opaque during every scroll frame.
+            .zIndex(1f)
+            .background(Color(0xFF070B10).copy(alpha = 1f))
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(32.dp),
-            // Fully opaque to prevent scroll content from showing through the dock.
-            color = Color(0xFF080D14), border = BorderStroke(1.dp, GlassBorderHighlight), tonalElevation = 0.dp) {
+            // Explicit alpha=1f prevents the content beneath the capsule from bleeding through.
+            color = Color(0xFF080D14).copy(alpha = 1f),
+            border = BorderStroke(1.dp, GlassBorderHighlight), tonalElevation = 0.dp) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 DockNavPill("Özet", "⌂", sel == 0, { onSel(0) }, Modifier.weight(1f)); Spacer(Modifier.width(6.dp))

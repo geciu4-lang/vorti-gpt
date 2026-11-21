@@ -9,7 +9,14 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -102,27 +109,43 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
             )
         }
 
-        state.message?.let { message ->
-            Surface(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+        AnimatedContent(
+            targetState = state.message?.let { state.designCapacityFeedbackId to it },
+            transitionSpec = {
+                (fadeIn(animationSpec = tween(180)) +
+                    slideInVertically(animationSpec = tween(180), initialOffsetY = { -it / 4 })) togetherWith
+                    (fadeOut(animationSpec = tween(120)) +
+                        slideOutVertically(animationSpec = tween(120), targetOffsetY = { -it / 4 }))
+            },
+            label = "controlsStatusBanner"
+        ) { bannerEvent ->
+            bannerEvent?.second?.let { message ->
+                val bannerTint = when {
+                    state.isDesignCapacitySaveError -> MaterialTheme.colorScheme.error
+                    state.isSavingDesignCapacity -> MaterialTheme.colorScheme.secondary
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                Surface(
+                    color = bannerTint.copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, bannerTint.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedButton(onClick = viewModel::clearMessage) {
-                        Text("Tamam", style = MaterialTheme.typography.labelSmall)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = bannerTint,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedButton(onClick = viewModel::clearMessage) {
+                            Text("Tamam", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }
