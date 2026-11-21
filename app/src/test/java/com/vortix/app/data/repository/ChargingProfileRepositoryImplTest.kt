@@ -15,7 +15,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class ChargingProfileRepositoryImplTest {
-    @Test fun startsAndAccumulatesChargingProfile() = runBlocking {
+    @Test fun startsAndAccumulatesChargingProfile(): Unit = runBlocking {
         val dao = FakeChargingProfileDao()
         val repo = ChargingProfileRepositoryImpl(dao)
         repo.startProfile("Orijinal 65W", sample(1_000L, 4_000_000L, 350))
@@ -29,7 +29,7 @@ class ChargingProfileRepositoryImplTest {
         assertNotNull(repo.observeProfiles().first().first().endedAtEpochMillis)
     }
 
-    @Test fun refusesToStartWhenDeviceIsNotCharging() = runBlocking {
+    @Test fun refusesToStartWhenDeviceIsNotCharging(): Unit = runBlocking {
         val repo = ChargingProfileRepositoryImpl(FakeChargingProfileDao())
         assertThrows(IllegalArgumentException::class.java) {
             runBlocking { repo.startProfile("Test", sample(1L, 10_000_000L, 370).copy(status = BatteryStatus.DISCHARGING)) }
