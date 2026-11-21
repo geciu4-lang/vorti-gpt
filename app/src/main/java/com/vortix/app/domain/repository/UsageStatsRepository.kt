@@ -7,4 +7,6 @@ interface UsageStatsRepository {
     fun hasUsageAccess(): Boolean
     suspend fun loadTodayUsage(): List<AppUsageItem>
     suspend fun loadDormantApps(minimumUnusedDays: Int = 14): List<DormantAppItem>
+    /** Foreground-use signal during a window; it is not a per-app battery attribution. */
+    suspend fun loadMostUsedAppBetween(startEpochMillis: Long, endEpochMillis: Long): AppUsageItem? = null
 }

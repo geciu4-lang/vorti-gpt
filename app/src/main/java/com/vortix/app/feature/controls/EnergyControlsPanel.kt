@@ -2,7 +2,6 @@ package com.vortix.app.feature.controls
 
 import android.Manifest
 import android.content.Intent
-import android.content.Context
 import android.widget.Toast
 import android.net.Uri
 import android.os.Build
@@ -33,57 +32,97 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortix.app.domain.model.AppUsageItem
-import com.vortix.app.domain.model.WakelockAccessState
-import com.vortix.app.domain.model.WakelockRecord
+import com.vortix.app.domain.model.ChargingProfile
 import com.vortix.app.feature.dashboard.GlassContainer
-import com.vortix.app.platform.UsageAccessSettingsLauncher
+import com.vortix.app.platform.telemetry.LiveBatteryTelemetryService
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
+fun EnergyControlsPanel(
+    viewModel: EnergyControlsViewModel,
+    benchmarkViewModel: ChargingBenchmarkViewModel,
+    chargingProfileViewModel: ChargingProfileViewModel
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val profileState by chargingProfileViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, viewModel) {
+    DisposableEffect(lifecycleOwner, viewModel, benchmarkViewModel) {
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-            viewModel.refreshUsageApps()
-            viewModel.refreshWakelockAccess()
+            benchmarkViewModel.refreshChargeState()
+            chargingProfileViewModel.refreshChargeState()
         }
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.refreshUsageApps()
-                viewModel.refreshWakelockAccess()
+                benchmarkViewModel.refreshChargeState()
+                chargingProfileViewModel.refreshChargeState()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    var pendingLiveTelemetryPermission by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { }
+    ) { granted ->
+        if (pendingLiveTelemetryPermission) {
+            pendingLiveTelemetryPermission = false
+            if (granted) viewModel.setLiveTelemetryEnabled(true)
+            else {
+                viewModel.setLiveTelemetryEnabled(false)
+                Toast.makeText(context, "Canlı telemetri için bildirim izni gerekli.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    LaunchedEffect(state.isLiveTelemetryEnabled) {
+        val serviceIntent = Intent(context, LiveBatteryTelemetryService::class.java)
+        if (state.isLiveTelemetryEnabled) {
+            val permissionGranted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (permissionGranted) {
+                runCatching { ContextCompat.startForegroundService(context, serviceIntent) }
+                    .onFailure {
+                        viewModel.setLiveTelemetryEnabled(false)
+                        Toast.makeText(context, "Canlı telemetri servisi başlatılamadı.", Toast.LENGTH_LONG).show()
+                    }
+            } else {
+                viewModel.setLiveTelemetryEnabled(false)
+                Toast.makeText(context, "Canlı telemetri için bildirim izni gerekli.", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            context.stopService(serviceIntent)
+        }
+    }
 
     var sliderTarget by remember(state.chargeTargetPercent) {
         mutableFloatStateOf(state.chargeTargetPercent.toFloat())
@@ -103,7 +142,7 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
                 fontWeight = FontWeight.ExtraBold
             )
             Text(
-                text = "Şarj hedefi bildirimi, düşük pil alarmı, sıcaklık uyarısı ve uygulama radarı.",
+                text = "Şarj hedefi, pil koruması, canlı telemetri ve adaptör profillerini yönet.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -217,6 +256,71 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
                             valueRange = 70f..100f,
                             steps = 5
                         )
+                    }
+                }
+
+                AnimatedVisibility(visible = state.isChargeLimitEnabled) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Webhook Tetikleyici", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Akıllı priz veya Home Assistant webhook adresini hedefe ulaşıldığında çağırır.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = state.isChargeWebhookEnabled,
+                                onCheckedChange = viewModel::setChargeWebhookEnabled
+                            )
+                        }
+                        if (state.isChargeWebhookEnabled) {
+                            OutlinedTextField(
+                                value = state.chargeWebhookUrl,
+                                onValueChange = viewModel::setChargeWebhookUrl,
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                label = { Text("HTTPS Webhook URL") },
+                                placeholder = { Text("https://home.example/api/webhook/…") }
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = state.chargeWebhookMethod == "GET",
+                                    onClick = { viewModel.setChargeWebhookMethod("GET") },
+                                    label = { Text("GET") }
+                                )
+                                FilterChip(
+                                    selected = state.chargeWebhookMethod == "POST",
+                                    onClick = { viewModel.setChargeWebhookMethod("POST") },
+                                    label = { Text("POST") }
+                                )
+                                Spacer(Modifier.weight(1f))
+                                OutlinedButton(
+                                    onClick = viewModel::testChargeWebhook,
+                                    enabled = !state.isTestingChargeWebhook && state.chargeWebhookUrl.isNotBlank(),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) { Text(if (state.isTestingChargeWebhook) "Gönderiliyor…" else "Test Et") }
+                            }
+                            Text(
+                                "Test Et gerçek uç noktayı çağırır; Home Assistant otomasyonunu tetikleyebilir.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                            state.chargeWebhookLastResult?.let { result ->
+                                Text(
+                                    result,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (result.contains("başarılı", true) || result.contains("HTTP 2"))
+                                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Text(
+                                "Otomatik tetikleme, arka plan pil izleme örneklemesiyle yapılır; WorkManager nedeniyle tam anlık olmayabilir. Ağ güvenliği için yalnızca HTTPS desteklenir.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -391,6 +495,10 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
             }
         }
 
+        // Charging adapter + cable benchmark (battery-side electrical sampling).
+        ChargingBenchmarkCard(benchmarkViewModel)
+        ChargingProfileCard(chargingProfileViewModel, profileState)
+
         // 5. Background Telemetry & Eco Guard Card
         GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -416,6 +524,37 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
+                            text = "Canlı Bildirim Telemetrisi",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Bildirim panelinde güç, akım, sıcaklık ve şarj hedefini 5 saniyede bir günceller. Sessiz ve kalıcı bildirim kullanır.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = state.isLiveTelemetryEnabled,
+                        onCheckedChange = { enabled ->
+                            if (!enabled) {
+                                viewModel.setLiveTelemetryEnabled(false)
+                            } else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                                    context, Manifest.permission.POST_NOTIFICATIONS
+                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                pendingLiveTelemetryPermission = true
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                viewModel.setLiveTelemetryEnabled(true)
+                            }
+                        }
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
                             text = "Eco Guard Öneri Profili",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
@@ -430,149 +569,6 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
                         checked = state.isEcoGuardEnabled,
                         onCheckedChange = viewModel::setEcoGuardEnabled
                     )
-                }
-            }
-        }
-
-        // 6. Vortex Drain Radar Card
-        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "Vortex Drain Radar",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Ön plan süresi bugüne aittir. Mobil ve Wi-Fi verileri son 24 saatlik sorgu aralığındaki saatlik sistem kayıtlarından gelir; uygulama başına mAh veya kesin pil tüketimi değildir.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (!state.hasUsageAccess) {
-                    Button(
-                        onClick = {
-                            openUsageAccessSettings(context)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
-                    ) { Text("Kullanım erişimi iznini aç") }
-                } else {
-                    Text(
-                        text = "Ön plan: bugün · Ağ: son 24 saatlik sorgu aralığı (saatlik kovalar) · Sıralama pil tüketimi değildir.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (state.isLoadingUsage) {
-                        Text("Kullanım ve ağ istatistikleri taranıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else if (state.topApps.isEmpty()) {
-                        Text("Görüntülenecek kullanım veya UID ağ trafiği kaydı bulunamadı.")
-                    } else {
-                        state.topApps.forEach { app ->
-                            UsageAppRow(
-                                app = app,
-                                onOpenSettings = {
-                                    safeStartActivity(
-                                        context,
-                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                            data = Uri.parse("package:${app.packageName}")
-                                        }
-                                    )
-                                }
-                            )
-                        }
-                    }
-                    OutlinedButton(
-                        onClick = viewModel::refreshUsageApps,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) { Text("↻ Radar listesini yenile") }
-                }
-            }
-        }
-
-        // 7. Optional advanced Wakelock diagnostics (Shizuku/Sui)
-        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "GELİŞMİŞ WAKELOCK TANILAMASI",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-                Text(
-                    text = "Android Batterystats kayıtları son şarjdan itibaren okunur. Bu süreler uygulama başına mAh tüketimi değildir ve kilitleri otomatik kapatmaz.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                when (state.wakelockAccessState) {
-                    WakelockAccessState.SHIZUKU_NOT_RUNNING -> {
-                        Text(
-                            "İsteğe bağlı Shizuku veya Sui bağlantısı bulunamadı. Standart Radar bundan etkilenmez.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedButton(
-                            onClick = {
-                                safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/")))
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("Shizuku / Sui kurulum rehberi") }
-                    }
-                    WakelockAccessState.UNSUPPORTED_VERSION -> {
-                        Text(
-                            "Shizuku sürümü eski. UserService desteği için Shizuku API v11 veya üzeri gerekir.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
-                    WakelockAccessState.PERMISSION_REQUIRED -> {
-                        Text(
-                            "Shizuku bağlantısı bulundu. Wakelock tanılaması için VORTIX'e Shizuku izni vermelisin.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Button(
-                            onClick = viewModel::requestWakelockPermission,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("Shizuku iznini iste") }
-                    }
-                    WakelockAccessState.READY -> {
-                        OutlinedButton(
-                            onClick = viewModel::refreshWakelockDiagnostics,
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !state.isLoadingWakelocks,
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text(if (state.isLoadingWakelocks) "Wakelock kayıtları okunuyor…" else "Wakelock kayıtlarını tara") }
-                    }
-                }
-
-                if (state.isLoadingWakelocks) {
-                    Text("Android Batterystats verisi salt-okunur olarak alınıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                state.wakelockErrorMessage?.let { error ->
-                    Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
-                if (state.wakelockRecords.isNotEmpty()) {
-                    Text(
-                        "SON ŞARJDAN BERİ · ${state.wakelockRecords.size} KAYIT",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    state.wakelockRecords.take(12).forEach { record ->
-                        WakelockDiagnosticRow(record)
-                    }
-                    Text(
-                        "Kayıtlar Android sistem istatistikleridir. Üretici/Android sürümüne göre bazı ayrıntılar bulunmayabilir.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else if (state.wakelockAccessState == WakelockAccessState.READY &&
-                    !state.isLoadingWakelocks && state.wakelockErrorMessage == null &&
-                    state.wakelockCapturedAtEpochMillis != null
-                ) {
-                    Text("Son şarjdan beri gösterilecek partial wakelock kaydı bulunamadı.", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -610,97 +606,255 @@ fun EnergyControlsPanel(viewModel: EnergyControlsViewModel) {
 }
 
 @Composable
-private fun UsageAppRow(app: AppUsageItem, onOpenSettings: () -> Unit) {
-    GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 16) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Text(
-                    text = app.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = if (app.foregroundTimeMillis > 0L) {
-                        formatDuration(app.foregroundTimeMillis)
-                    } else {
-                        "Bugün ön plan kullanımı kaydedilmedi"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-                Text(
-                    text = if (app.mobileBytes == null && app.wifiBytes == null) {
-                        "Ağ istatistiği bu cihazda sunulamadı"
-                    } else {
-                        "Mobil ${formatBytes(app.mobileBytes)}  ·  Wi-Fi ${formatBytes(app.wifiBytes)}"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (app.hasSharedUidTraffic) {
-                    Text(
-                        text = "Ortak UID: en az ${app.sharedUidPackageCount} görünür paket aynı ağ toplamını paylaşır; tek uygulamaya atanamaz.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
+private fun ChargingProfileCard(
+    viewModel: ChargingProfileViewModel,
+    state: ChargingProfileUiState
+) {
+    var profileName by remember { mutableStateOf("") }
+    GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22, highlighted = state.activeProfile != null) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("ADAPTÖR DİJİTAL PARMAK İZİ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Şarj oturumu boyunca batarya tarafında ölçülen ortalama/tepe güç ve sıcaklık değişimini profil olarak kaydeder. USB adaptör giriş gücü veya kablo direnci doğrudan ölçülmez.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "Canlı telemetri açıksa yaklaşık 5 sn örneklenir; yalnızca WorkManager kullanılıyorsa Android örneklemeyi yaklaşık 15 dk veya daha uzun süre erteleyebilir. Skor aynı cihazdaki profilleri kıyaslamak için sezgiseldir.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary
+            )
+            OutlinedTextField(
+                value = profileName,
+                onValueChange = { profileName = it.take(48) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Adaptör profili adı") },
+                placeholder = { Text("Orijinal 65W / Araç Şarjı") }
+            )
+            if (state.activeProfile == null) {
+                Button(
+                    onClick = { viewModel.startProfile(profileName); profileName = "" },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = state.isCharging && !state.isSaving && profileName.isNotBlank(),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text(if (state.isSaving) "Başlatılıyor…" else "Adaptör Profilini Kaydet") }
+                if (!state.isCharging) {
+                    Text("Profil kaydı yalnızca cihaz şarj olurken etkinleşir.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("AKTİF · ${state.activeProfile.name}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Text("${state.activeProfile.sampleCount} geçerli güç örneği toplandı",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedButton(onClick = viewModel::finishProfile, shape = RoundedCornerShape(10.dp)) { Text("Bitir") }
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(
-                onClick = onOpenSettings,
-                shape = RoundedCornerShape(10.dp)
-            ) { Text("Ayarlar") }
+            state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }
+            if (state.profiles.size >= 2) {
+                Text("SON İKİ PROFİL · YAN YANA KARŞILAŞTIRMA", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AdapterProfileComparisonColumn(state.profiles[0], Modifier.weight(1f))
+                    AdapterProfileComparisonColumn(state.profiles[1], Modifier.weight(1f))
+                }
+            }
+            if (state.profiles.isNotEmpty()) {
+                Text("KAYITLI ADAPTÖRLER", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                state.profiles.take(8).forEach { profile ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(profile.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Ort. ${profile.averagePowerWatts?.let { String.format(Locale.US, "%.1f W", it) } ?: "—"}  ·  Tepe ${profile.peakPowerWatts?.let { String.format(Locale.US, "%.1f W", it) } ?: "—"}",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "ΔT ${profile.temperatureDeltaCelsius?.let { String.format(Locale.US, "%+.1f °C", it) } ?: "—"}  ·  ${profile.efficiencyGrade ?: "Skor yok"}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = when (profile.efficiencyGrade) {
+                                    "A+", "A" -> MaterialTheme.colorScheme.primary
+                                    "C" -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.secondary
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
+@Composable
+private fun AdapterProfileComparisonColumn(profile: ChargingProfile, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+    ) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(profile.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                maxLines = 2)
+            Text("Ort. ${profile.averagePowerWatts?.let { String.format(Locale.US, "%.1f W", it) } ?: "—"}",
+                style = MaterialTheme.typography.bodySmall)
+            Text("Tepe ${profile.peakPowerWatts?.let { String.format(Locale.US, "%.1f W", it) } ?: "—"}",
+                style = MaterialTheme.typography.bodySmall)
+            Text("ΔT ${profile.temperatureDeltaCelsius?.let { String.format(Locale.US, "%+.1f°C", it) } ?: "—"}",
+                style = MaterialTheme.typography.bodySmall)
+            Text(profile.efficiencyGrade ?: "Skor yok", style = MaterialTheme.typography.labelLarge,
+                color = if (profile.efficiencyGrade == "C") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold)
+        }
+    }
+}
 
 @Composable
-private fun WakelockDiagnosticRow(record: WakelockRecord) {
-    GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 16) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            Text(
-                text = record.packageNames.take(3).joinToString().ifBlank { "UID ${record.uid}" },
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            if (record.packageNames.size > 1) {
-                Text(
-                    "Ortak UID grubu · ${record.packageNames.size} paket · UID ${record.uid}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
+private fun ChargingBenchmarkCard(viewModel: ChargingBenchmarkViewModel) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, state.isRunning) {
+        if (!state.isRunning) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                while (true) {
+                    viewModel.refreshChargeState()
+                    delay(5_000L)
+                }
             }
-            Text(record.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-            val duration = record.actualPartialDurationMillis ?: record.partialTimeMillis
+        }
+    }
+    GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22, highlighted = state.isRunning) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("ADAPTÖR HIZ TESTİ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                text = "Partial süre: ${formatElapsedDuration(duration)}" +
-                    (record.partialCount?.let { " · $it kez" } ?: " · sayaç sunulmadı"),
+                "30 saniyelik akım, voltaj ve sıcaklık örneklemesi. Puan, cihazın batarya tarafındaki ölçümlerine dayanır; USB adaptör çıkış gücünü veya kabloyu doğrudan test etmez.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            record.backgroundPartialDurationMillis?.takeIf { it > 0L }?.let { backgroundDuration ->
-                Text(
-                    text = "Arka plan partial: ${formatElapsedDuration(backgroundDuration)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
+            when {
+                state.isRunning -> {
+                    Text("Test sürüyor · ${state.remainingSeconds} sn kaldı", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { (1f - state.remainingSeconds / 30f).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                state.isDeviceCharging -> Text("Şarj bağlantısı algılandı · Teste hazır", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                else -> Text("Test yalnızca cihaz şarj olurken kullanılabilir.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
             }
-            if (record.actualPartialDurationMillis == null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = viewModel::startTest,
+                    enabled = state.isDeviceCharging && !state.isRunning,
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (state.isRunning) "Test sürüyor" else "30 sn testi başlat") }
+                if (state.isRunning) {
+                    OutlinedButton(onClick = viewModel::cancelTest) { Text("İptal") }
+                }
+            }
+            state.message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            state.result?.let { result ->
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(result.grade.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                            Text("${result.score}/100", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        }
+                        BenchmarkMetricLine("Tepe güç", String.format(Locale.getDefault(), "%.1f W", result.peakPowerWatts))
+                        BenchmarkMetricLine("Ortalama akım", String.format(Locale.getDefault(), "%.0f mA", result.averageCurrentMilliamps))
+                        BenchmarkMetricLine("Voltaj kararlılığı (CV)", result.voltageVariationPercent?.let { String.format(Locale.getDefault(), "%.2f%%", it) } ?: "Yetersiz veri")
+                        BenchmarkMetricLine("Sıcaklık artışı", result.temperatureIncreaseCelsius?.let { String.format(Locale.getDefault(), "%+.1f °C", it) } ?: "Yetersiz veri")
+                        Text(result.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BenchmarkMetricLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+internal fun UsageAppRow(
+    app: AppUsageItem,
+    showShizukuActions: Boolean,
+    isBusy: Boolean,
+    onForceStop: () -> Unit,
+    onRestrictBackground: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 16) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(app.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (app.foregroundTimeMillis > 0L) formatDuration(app.foregroundTimeMillis)
+                        else "Bugün ön plan kullanımı kaydedilmedi",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Text(
+                        if (app.mobileBytes == null && app.wifiBytes == null) "Ağ istatistiği bu cihazda sunulamadı"
+                        else "Mobil ${formatBytes(app.mobileBytes)}  ·  Wi-Fi ${formatBytes(app.wifiBytes)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (app.hasSharedUidTraffic) {
+                        Text(
+                            "Ortak UID: en az ${app.sharedUidPackageCount} paket aynı ağ toplamını paylaşır; tek uygulamaya atanamaz.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+            }
+            if (showShizukuActions) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onForceStop,
+                        enabled = !isBusy,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text(if (isBusy) "İşleniyor…" else "Durdur") }
+                    OutlinedButton(
+                        onClick = onRestrictBackground,
+                        enabled = !isBusy,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text("Arka Planı Sınırla") }
+                }
                 Text(
-                    "Bu Android sürümünde yalnızca paylaştırılmış süre mevcut.",
+                    "Shizuku shell üzerinden işlem yapılır. Arka plan kısıtlaması seçilen uygulamanın bildirimlerini ve zamanlanmış işlerini etkileyebilir.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            } else {
+                OutlinedButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) { Text("Uygulama Ayarları") }
             }
         }
     }
@@ -720,12 +874,6 @@ private fun formatBytes(bytes: Long?): String {
     }
 }
 
-private fun openUsageAccessSettings(context: Context) {
-    if (!UsageAccessSettingsLauncher.open(context)) {
-        Toast.makeText(context, "Kullanım erişimi ayarları açılamadı.", Toast.LENGTH_LONG).show()
-    }
-}
-
 private fun safeStartActivity(context: android.content.Context, intent: Intent) {
     runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
@@ -735,16 +883,4 @@ private fun formatDuration(milliseconds: Long): String {
     val hours = minutes / 60L
     val remainder = minutes % 60L
     return if (hours > 0L) "Bugün $hours sa $remainder dk" else "Bugün $remainder dk"
-}
-
-private fun formatElapsedDuration(milliseconds: Long): String {
-    val totalSeconds = milliseconds.coerceAtLeast(0L) / 1_000L
-    val hours = totalSeconds / 3_600L
-    val minutes = (totalSeconds % 3_600L) / 60L
-    val seconds = totalSeconds % 60L
-    return when {
-        hours > 0L -> "${hours} sa ${minutes} dk"
-        minutes > 0L -> "${minutes} dk ${seconds} sn"
-        else -> "${seconds} sn"
-    }
 }

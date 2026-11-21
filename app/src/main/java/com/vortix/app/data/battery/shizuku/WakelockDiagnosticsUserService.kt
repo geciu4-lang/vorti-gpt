@@ -2,6 +2,7 @@ package com.vortix.app.data.battery.shizuku
 
 import android.os.RemoteException
 import com.vortix.app.data.battery.BatteryStatsWakelockParser
+import com.vortix.app.domain.analytics.ShizukuPackageCommandFactory
 import androidx.annotation.Keep
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -13,8 +14,8 @@ import java.util.concurrent.TimeoutException
 import kotlin.system.exitProcess
 
 /**
- * Runs in Shizuku's shell/root user-service process. It performs one read-only
- * Batterystats query and returns only wl/awl check-in rows over Binder.
+ * Runs in Shizuku's authorized shell/root user-service process. It returns filtered
+ * Batterystats wakelock rows and executes validated package actions using argv arrays.
  */
 @Keep
 class WakelockDiagnosticsUserService : IWakelockDiagnosticsService.Stub() {
@@ -81,6 +82,47 @@ class WakelockDiagnosticsUserService : IWakelockDiagnosticsService.Stub() {
         return output.toString()
     }
 
+
+    /** Stops one explicitly selected third-party package without invoking a shell string. */
+    @Throws(RemoteException::class)
+    override fun forceStopPackage(packageName: String): Boolean {
+        val command = ShizukuPackageCommandFactory.forceStop(packageName) ?: return false
+        return runShellCommand(*command.toTypedArray())
+    }
+
+    /** Applies Android's RUN_ANY_IN_BACKGROUND app-op restriction for the selected package. */
+    @Throws(RemoteException::class)
+    override fun restrictBackground(packageName: String): Boolean {
+        val command = ShizukuPackageCommandFactory.restrictBackground(packageName) ?: return false
+        return runShellCommand(*command.toTypedArray())
+    }
+
+    private fun runShellCommand(vararg command: String): Boolean {
+        val process = try {
+            ProcessBuilder(*command).redirectErrorStream(true).start()
+        } catch (error: Exception) {
+            throw RemoteException("Shizuku komutu başlatılamadı: ${error.message}")
+        }
+        try {
+            val finished = process.waitFor(SHELL_COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                return false
+            }
+            // Commands are intentionally invoked as argv, never through `sh -c`.
+            return process.exitValue() == 0
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+            process.destroyForcibly()
+            throw RemoteException("Shizuku komutu kesildi.")
+        } finally {
+            if (process.isAlive) process.destroyForcibly()
+            runCatching { process.inputStream.close() }
+            runCatching { process.errorStream.close() }
+            runCatching { process.outputStream.close() }
+        }
+    }
+
     override fun destroy() {
         exitProcess(0)
     }
@@ -89,6 +131,7 @@ class WakelockDiagnosticsUserService : IWakelockDiagnosticsService.Stub() {
         const val DUMPSYS_TIMEOUT_SECONDS = 15
         const val PROCESS_TIMEOUT_SECONDS = 18L
         const val OUTPUT_COLLECT_TIMEOUT_SECONDS = 2L
+        const val SHELL_COMMAND_TIMEOUT_SECONDS = 8L
         // Keep the Binder response well below Android's transaction buffer limit.
         const val MAX_RETURN_BYTES = 384 * 1024
     }

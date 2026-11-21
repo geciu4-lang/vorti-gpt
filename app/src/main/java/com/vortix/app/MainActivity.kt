@@ -10,6 +10,8 @@ import com.vortix.app.feature.dashboard.DashboardScreen
 import com.vortix.app.feature.dashboard.DashboardViewModel
 import com.vortix.app.feature.controls.EnergyControlsViewModel
 import com.vortix.app.feature.insights.BatteryInsightsViewModel
+import com.vortix.app.feature.controls.ChargingBenchmarkViewModel
+import com.vortix.app.feature.controls.ChargingProfileViewModel
 import com.vortix.app.ui.theme.VortixTheme
 import com.vortix.app.widget.VortixBatteryWidgetProvider
 import dagger.hilt.android.AndroidEntryPoint
@@ -19,6 +21,8 @@ class MainActivity : ComponentActivity() {
     private val dashboardViewModel: DashboardViewModel by viewModels()
     private val energyControlsViewModel: EnergyControlsViewModel by viewModels()
     private val batteryInsightsViewModel: BatteryInsightsViewModel by viewModels()
+    private val chargingBenchmarkViewModel: ChargingBenchmarkViewModel by viewModels()
+    private val chargingProfileViewModel: ChargingProfileViewModel by viewModels()
 
     override fun onResume() {
         super.onResume()
@@ -38,7 +42,9 @@ class MainActivity : ComponentActivity() {
                 DashboardScreen(
                     viewModel = dashboardViewModel,
                     energyControlsViewModel = energyControlsViewModel,
-                    insightsViewModel = batteryInsightsViewModel
+                    insightsViewModel = batteryInsightsViewModel,
+                    benchmarkViewModel = chargingBenchmarkViewModel,
+                    chargingProfileViewModel = chargingProfileViewModel
                 )
             }
         }

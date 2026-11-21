@@ -7,4 +7,6 @@ interface WakelockDiagnosticsRepository {
     fun currentAccessState(): WakelockAccessState
     fun requestPermission(): Boolean
     suspend fun readSinceLastCharge(): WakelockDiagnosticsResult
+    suspend fun forceStopPackage(packageName: String): Boolean = false
+    suspend fun restrictBackground(packageName: String): Boolean = false
 }

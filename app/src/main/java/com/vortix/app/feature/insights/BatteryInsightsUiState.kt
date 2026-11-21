@@ -6,10 +6,12 @@ import com.vortix.app.domain.model.BatterySnapshot
 import com.vortix.app.domain.model.EnergyChangeMarker
 import com.vortix.app.domain.model.DrainComparison
 import com.vortix.app.domain.model.PowerInsightSummary
+import com.vortix.app.domain.analytics.NightStandbyAnalyzer
 
  data class BatteryInsightsUiState(
     val summary: PowerInsightSummary? = null,
     val history: List<BatterySnapshot> = emptyList(),
+    val nightStandbySessions: List<NightStandbyAnalyzer.Session> = emptyList(),
     val designCapacityMah: Int = 0,
     val ecoGuardEnabled: Boolean = false,
     val batteryBaselineAtEpochMillis: Long = 0L,

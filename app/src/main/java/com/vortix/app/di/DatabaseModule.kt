@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.room.Room
 import com.vortix.app.data.local.VortixDatabase
 import com.vortix.app.data.local.MIGRATION_1_2
+import com.vortix.app.data.local.MIGRATION_2_3
 import com.vortix.app.data.local.dao.BatterySampleDao
+import com.vortix.app.data.local.dao.ChargingProfileDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,9 +24,13 @@ object DatabaseModule {
             context,
             VortixDatabase::class.java,
             "vortix-energy.db"
-        ).addMigrations(MIGRATION_1_2).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
 
     @Provides
     fun provideBatterySampleDao(database: VortixDatabase): BatterySampleDao =
         database.batterySampleDao()
+
+    @Provides
+    fun provideChargingProfileDao(database: VortixDatabase): ChargingProfileDao =
+        database.chargingProfileDao()
 }

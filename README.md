@@ -1,4 +1,4 @@
-# VORTIX 7.0.6 — Android energy intelligence candidate
+# VORTIX 7.1.0 — Live telemetry & charging intelligence candidate
 
 VORTIX is an on-device Android battery monitoring and analysis application built with Kotlin, Jetpack Compose, Material 3, MVVM and Clean Architecture. This archive is a **working source candidate**, not a release-certified build.
 
@@ -10,6 +10,9 @@ VORTIX is an on-device Android battery monitoring and analysis application built
 - **Drain Radar 0.3.1 core:** today's foreground-use time plus mobile/Wi-Fi traffic from Android's rolling 24-hour query interval, grouped by UID. Launcher apps with observed traffic can appear even without today's foreground use. Shared UIDs are explicitly marked; network traffic is not converted into app-level mAh or battery percentages.
 - **Drain Radar 0.3.2 Wakelock diagnostics:** optional Shizuku/Sui UserService reads Android Batterystats `wl`/`awl` check-in rows. The UI shows UID/tag partial-wakelock durations/counts only; no energy/mAh attribution or automatic process/lock control is performed.
 - **Energy Controls:** user-configured charge-target, low-battery and thermal notifications; optional background sampling; Usage Access handoff.
+- **Live Charging Telemetry:** optional ongoing, silent low-priority notification with battery-side power, current, temperature and charge-target state; Android 13+ notification permission is requested.
+- **Charging Benchmark:** 30-second battery-side current/voltage/temperature sampling with a heuristic A+/A/B/C comparison score. This is not USB adapter output or cable certification.
+- **Night Standby / Vampire Drain:** screen-off, unplugged discharge sessions of at least four hours, with hourly percentage loss and measured or clearly marked estimated mAh; UsageStats foreground use is shown only as a contextual signal.
 - **Power Advisor:** evidence-threshold recommendations from the pure Kotlin analytics engine.
 - **History:** local CSV export, change markers and a non-destructive new-battery baseline.
 
@@ -32,7 +35,7 @@ VORTIX is an on-device Android battery monitoring and analysis application built
 | JVM target | 17 |
 | Application ID | `com.vortix.app` |
 | Shizuku API / Provider | 13.1.5 (optional advanced diagnostics) |
-| Version | `7.0.6` (`versionCode` 15) |
+| Version | `7.1.0` (`versionCode` 16) |
 
 The app module uses AGP 9 built-in Kotlin; the external `org.jetbrains.kotlin.android` plugin is not applied. The Compose compiler plugin remains pinned to the same Kotlin version.
 
@@ -69,4 +72,4 @@ GitHub Actions runs the unit tests and creates a Debug APK artifact on pushes to
 
 ## Release gate
 
-This archive includes the six follow-up video-review remediations in `docs/VIDEO_REMEDIATION_REPORT.md`. It has not yet passed verified Gradle Sync, Kotlin/Compose compilation, KSP/Hilt/Room generation, the complete JUnit suite, APK assembly or physical-device/OEM testing for this exact 7.0.6 revision. The previously user-reported 7.0.3 CI and Pixel 5/API 30 results do not validate these new changes. Do not publish this revision until CI and representative device tests pass. See `BUILD_VALIDATION.md`, `docs/VIDEO_REMEDIATION_REPORT.md`, `docs/DRAIN_RADAR_0.3.2_WAKELOCK_NOTES.md` and `docs/SHIZUKU_SETUP.md`.
+This 7.1.0 source candidate adds the dynamic alert badge, live telemetry foreground service, 30-second charging benchmark and night standby analysis. Isolated JVM checks pass for the 13 pure Kotlin feature tests, and the changed benchmark ViewModel has been checked separately with lightweight platform stubs. The full Gradle test task, Kotlin/Compose compilation, KSP/Hilt/Room generation, APK assembly and Firebase Test Lab run have **not** been completed for this exact revision because the Gradle wrapper distribution could not be downloaded in the current environment. Do not publish this candidate until GitHub Actions succeeds and representative device tests pass. See `docs/FEATURES_7.1.0.md`, `BUILD_VALIDATION.md`, `docs/VIDEO_REMEDIATION_REPORT.md`, `docs/DRAIN_RADAR_0.3.2_WAKELOCK_NOTES.md` and `docs/SHIZUKU_SETUP.md`.

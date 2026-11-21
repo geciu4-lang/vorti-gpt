@@ -6,6 +6,12 @@ import com.vortix.app.domain.model.WakelockRecord
 
 data class EnergyControlsUiState(
     val isMonitoringEnabled: Boolean = false,
+    val isLiveTelemetryEnabled: Boolean = false,
+    val isChargeWebhookEnabled: Boolean = false,
+    val chargeWebhookUrl: String = "",
+    val chargeWebhookMethod: String = "POST",
+    val chargeWebhookLastResult: String? = null,
+    val isTestingChargeWebhook: Boolean = false,
     val isChargeLimitEnabled: Boolean = false,
     val chargeTargetPercent: Int = 80,
     val isLowBatteryAlertEnabled: Boolean = false,
@@ -27,5 +33,7 @@ data class EnergyControlsUiState(
     val wakelockRecords: List<WakelockRecord> = emptyList(),
     val wakelockErrorMessage: String? = null,
     val wakelockCapturedAtEpochMillis: Long? = null,
+    val busyPackageName: String? = null,
+    val packageActionMessage: String? = null,
     val message: String? = null
 )

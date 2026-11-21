@@ -3,6 +3,7 @@ package com.vortix.app.feature.insights
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vortix.app.domain.analytics.BatteryAnalyticsEngine
+import com.vortix.app.domain.analytics.NightStandbyAnalyzer
 import com.vortix.app.domain.model.EnergyChangeMarker
 import com.vortix.app.domain.repository.BatteryRepository
 import com.vortix.app.domain.repository.EnergySettingsRepository
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 @HiltViewModel
 class BatteryInsightsViewModel @Inject constructor(
@@ -28,6 +30,7 @@ class BatteryInsightsViewModel @Inject constructor(
     val uiState = _uiState.asStateFlow()
 
     private val historyStart = System.currentTimeMillis() - HISTORY_WINDOW_MILLIS
+    private var nightStandbyEnrichmentJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -58,6 +61,10 @@ class BatteryInsightsViewModel @Inject constructor(
                     Pair(markers, comparisons)
                 )
             }.collect { (configuration, summary, markerData) ->
+                val nightSessions = NightStandbyAnalyzer.analyze(
+                    samples = configuration.samples,
+                    designCapacityMah = configuration.designCapacityMah.takeIf { it > 0 }
+                ).takeLast(5)
                 _uiState.update {
                     it.copy(
                         history = configuration.samples,
@@ -65,9 +72,32 @@ class BatteryInsightsViewModel @Inject constructor(
                         ecoGuardEnabled = configuration.ecoGuardEnabled,
                         batteryBaselineAtEpochMillis = configuration.baselineAtEpochMillis,
                         summary = summary,
+                        nightStandbySessions = nightSessions,
                         changeMarkers = markerData.first,
                         changeComparisons = markerData.second
                     )
+                }
+                nightStandbyEnrichmentJob?.cancel()
+                if (nightSessions.isNotEmpty() && runCatching { usageStatsRepository.hasUsageAccess() }.getOrDefault(false)) {
+                    nightStandbyEnrichmentJob = viewModelScope.launch {
+                        val enriched = nightSessions.map { session ->
+                            val app = runCatching {
+                                usageStatsRepository.loadMostUsedAppBetween(
+                                    session.startEpochMillis,
+                                    session.endEpochMillis
+                                )
+                            }.getOrNull()
+                            session.copy(
+                                mostActiveAppName = app?.displayName,
+                                mostActiveAppForegroundMillis = app?.foregroundTimeMillis
+                            )
+                        }
+                        _uiState.update { current ->
+                            if (current.nightStandbySessions.map { it.startEpochMillis } == nightSessions.map { it.startEpochMillis }) {
+                                current.copy(nightStandbySessions = enriched)
+                            } else current
+                        }
+                    }
                 }
             }
         }

@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortix.app.domain.model.*
+import com.vortix.app.domain.analytics.BatteryAlertEvaluator
 import com.vortix.app.feature.controls.*
 import com.vortix.app.feature.insights.*
 import com.vortix.app.ui.theme.*
@@ -59,7 +60,9 @@ fun GlassContainer(
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     energyControlsViewModel: EnergyControlsViewModel,
-    insightsViewModel: BatteryInsightsViewModel
+    insightsViewModel: BatteryInsightsViewModel,
+    benchmarkViewModel: ChargingBenchmarkViewModel,
+    chargingProfileViewModel: ChargingProfileViewModel
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val controlsState by energyControlsViewModel.uiState.collectAsStateWithLifecycle()
@@ -74,14 +77,19 @@ fun DashboardScreen(
         controlsState.thermalThresholdCelsius,
         controlsState.lowBatteryThresholdPercent,
         controlsState.isThermalAlertEnabled,
-        controlsState.isLowBatteryAlertEnabled
+        controlsState.isLowBatteryAlertEnabled,
+        controlsState.isChargeLimitEnabled,
+        controlsState.chargeTargetPercent
     ) {
-        val temp = snapshot?.temperatureCelsius ?: 0.0
-        val lvl = snapshot?.levelPercent
-        snapshot?.health == BatteryHealth.OVERHEAT ||
-            (controlsState.isThermalAlertEnabled && temp >= controlsState.thermalThresholdCelsius.toDouble()) ||
-            (controlsState.isLowBatteryAlertEnabled && snapshot?.status == BatteryStatus.DISCHARGING &&
-                lvl != null && lvl <= controlsState.lowBatteryThresholdPercent)
+        BatteryAlertEvaluator.hasActiveAlert(
+            snapshot = snapshot,
+            thermalAlertEnabled = controlsState.isThermalAlertEnabled,
+            thermalThresholdCelsius = controlsState.thermalThresholdCelsius,
+            lowBatteryAlertEnabled = controlsState.isLowBatteryAlertEnabled,
+            lowBatteryThresholdPercent = controlsState.lowBatteryThresholdPercent,
+            chargeLimitEnabled = controlsState.isChargeLimitEnabled,
+            chargeTargetPercent = controlsState.chargeTargetPercent
+        )
     }
 
     if (confirmClear) {
@@ -122,7 +130,12 @@ fun DashboardScreen(
                     .padding(bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                AmbientTopBar(isAlert, uiState.isRefreshing)
+                AmbientTopBar(
+                    isAlert,
+                    uiState.isRefreshing,
+                    snapshot?.temperatureCelsius,
+                    snapshot?.thermalStatus
+                )
                 uiState.errorMessage?.let {
                     GlassContainer(cornerRadius = 16) {
                         Text(it, color = VortixError, style = MaterialTheme.typography.bodySmall,
@@ -166,8 +179,8 @@ fun DashboardScreen(
                         uiState.isRefreshing -> LoadingPanel()
                         else -> EmptyState { viewModel.refresh() }
                     }
-                        1 -> EnergyControlsPanel(energyControlsViewModel)
-                        else -> BatteryInsightsPanel(insightsViewModel)
+                        1 -> EnergyControlsPanel(energyControlsViewModel, benchmarkViewModel, chargingProfileViewModel)
+                        else -> BatteryInsightsPanel(insightsViewModel, energyControlsViewModel)
                     }
                 }
             }
@@ -176,7 +189,12 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun AmbientTopBar(isAlert: Boolean, isRefreshing: Boolean) {
+private fun AmbientTopBar(
+    isAlert: Boolean,
+    isRefreshing: Boolean,
+    temperatureCelsius: Double?,
+    thermalStatus: Int?
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -193,6 +211,20 @@ private fun AmbientTopBar(isAlert: Boolean, isRefreshing: Boolean) {
                     fontWeight = FontWeight.ExtraBold, letterSpacing = 1.6.sp)
                 Text(if (isRefreshing) "GÜNCELLENİYOR…" else "AMBIENT ENERGY OS",
                     style = MaterialTheme.typography.labelSmall, color = VortixOnSurfaceVariant)
+                val wear = com.vortix.app.domain.analytics.BatteryThermalWearAnalyzer.assess(temperatureCelsius)
+                if (wear != null) {
+                    val thermalLabel = com.vortix.app.domain.analytics.SystemThermalStatus.label(thermalStatus)
+                    Text(
+                        "TERMAL $thermalLabel  ·  KİMYASAL AŞINMA ×${String.format(java.util.Locale.US, "%.1f", wear.multiplier)} ${wear.label.uppercase(java.util.Locale.getDefault())}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (wear.multiplier >= 1.5 || com.vortix.app.domain.analytics.SystemThermalStatus.isWarning(thermalStatus)) VortixError else VortixOnSurfaceVariant
+                    )
+                    Text(
+                        "Yaklaşık termal gösterge; pil ömrü ölçümü değildir.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = VortixOnSurfaceVariant
+                    )
+                }
             }
         }
         if (isAlert) {

@@ -1,10 +1,17 @@
 package com.vortix.app.domain.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import com.vortix.app.domain.model.EnergyChangeMarker
 
 interface EnergySettingsRepository {
     val monitoringEnabled: Flow<Boolean>
+    val liveTelemetryEnabled: Flow<Boolean> get() = flowOf(false)
+    val chargeWebhookEnabled: Flow<Boolean> get() = flowOf(false)
+    val chargeWebhookUrl: Flow<String> get() = flowOf("")
+    val chargeWebhookMethod: Flow<String> get() = flowOf("POST")
+    val chargeWebhookTriggered: Flow<Boolean> get() = flowOf(false)
+    val chargeWebhookLastResult: Flow<String> get() = flowOf("")
     val chargeLimitEnabled: Flow<Boolean>
     val chargeTargetPercent: Flow<Int>
     val chargeTargetAlertSent: Flow<Boolean>
@@ -19,6 +26,12 @@ interface EnergySettingsRepository {
     val energyChangeMarkers: Flow<List<EnergyChangeMarker>>
     val batteryBaselineAtEpochMillis: Flow<Long>
     suspend fun setMonitoringEnabled(enabled: Boolean)
+    suspend fun setLiveTelemetryEnabled(enabled: Boolean) = Unit
+    suspend fun setChargeWebhookEnabled(enabled: Boolean) = Unit
+    suspend fun setChargeWebhookUrl(url: String) = Unit
+    suspend fun setChargeWebhookMethod(method: String) = Unit
+    suspend fun setChargeWebhookTriggered(triggered: Boolean) = Unit
+    suspend fun setChargeWebhookLastResult(result: String) = Unit
     suspend fun setChargeLimitEnabled(enabled: Boolean)
     suspend fun setChargeTargetPercent(percent: Int)
     suspend fun setChargeTargetAlertSent(sent: Boolean)

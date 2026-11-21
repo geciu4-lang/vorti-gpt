@@ -3,11 +3,13 @@ package com.vortix.app.data.battery
 import android.content.ComponentName
 import android.content.Context
 import android.content.ServiceConnection
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.IBinder
 import com.vortix.app.BuildConfig
 import com.vortix.app.data.battery.shizuku.IWakelockDiagnosticsService
 import com.vortix.app.data.battery.shizuku.WakelockDiagnosticsUserService
+import com.vortix.app.domain.analytics.ShizukuPackageNameValidator
 import com.vortix.app.domain.model.WakelockAccessState
 import com.vortix.app.domain.model.WakelockDiagnosticsResult
 import com.vortix.app.domain.repository.WakelockDiagnosticsRepository
@@ -102,6 +104,28 @@ class AndroidWakelockDiagnosticsRepository @Inject constructor(
                 )
             }
         }
+    }
+
+    override suspend fun forceStopPackage(packageName: String): Boolean = withContext(Dispatchers.IO) {
+        if (!isAllowedTargetPackage(packageName)) return@withContext false
+        if (currentAccessState() != WakelockAccessState.READY) return@withContext false
+        runCatching { getOrBindUserService().forceStopPackage(packageName) }.getOrDefault(false)
+    }
+
+    override suspend fun restrictBackground(packageName: String): Boolean = withContext(Dispatchers.IO) {
+        if (!isAllowedTargetPackage(packageName)) return@withContext false
+        if (currentAccessState() != WakelockAccessState.READY) return@withContext false
+        runCatching { getOrBindUserService().restrictBackground(packageName) }.getOrDefault(false)
+    }
+
+    private fun isAllowedTargetPackage(packageName: String): Boolean {
+        if (!ShizukuPackageNameValidator.isValid(packageName) || packageName == context.packageName) return false
+        val applicationInfo = runCatching {
+            context.packageManager.getApplicationInfo(packageName, PackageManager.MATCH_ALL)
+        }.getOrNull() ?: return false
+        // Never expose shell stop/restriction controls for Android/system packages.
+        val systemFlags = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+        return (applicationInfo.flags and systemFlags) == 0
     }
 
     private suspend fun getOrBindUserService(): IWakelockDiagnosticsService = serviceMutex.withLock {

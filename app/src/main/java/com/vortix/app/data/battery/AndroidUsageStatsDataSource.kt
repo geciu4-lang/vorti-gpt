@@ -171,6 +171,47 @@ class AndroidUsageStatsDataSource @Inject constructor(
             .take(MAX_RADAR_APPS)
     }
 
+    override suspend fun loadMostUsedAppBetween(startEpochMillis: Long, endEpochMillis: Long): AppUsageItem? =
+        withContext(Dispatchers.IO) {
+            if (!hasUsageAccess() || startEpochMillis < 0L || endEpochMillis <= startEpochMillis) {
+                return@withContext null
+            }
+            val usageManager = context.getSystemService(UsageStatsManager::class.java)
+                ?: return@withContext null
+            val best = runCatching {
+                usageManager.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY,
+                    startEpochMillis,
+                    endEpochMillis
+                ).orEmpty()
+                    .asSequence()
+                    .filter { it.packageName != context.packageName }
+                    .groupBy { it.packageName }
+                    .mapNotNull { (packageName, records) ->
+                        val foreground = records.fold(0L) { total, item ->
+                            saturatingAdd(total, item.totalTimeInForeground.coerceAtLeast(0L))
+                        }
+                        if (foreground <= 0L) return@mapNotNull null
+                        packageName to (foreground to (records.maxOfOrNull { it.lastTimeUsed } ?: 0L))
+                    }
+                    .maxByOrNull { it.second.first }
+            }.getOrNull() ?: return@withContext null
+            val packageName = best.first
+            val info = runCatching {
+                context.packageManager.getApplicationInfo(packageName, PackageManager.MATCH_ALL)
+            }.getOrNull()
+            val label = info?.let(::loadApplicationLabel)?.takeIf { it.isNotBlank() } ?: packageName
+            AppUsageItem(
+                packageName = packageName,
+                displayName = label,
+                foregroundTimeMillis = best.second.first,
+                lastTimeUsedMillis = best.second.second,
+                mobileBytes = null,
+                wifiBytes = null,
+                sharedUidPackageCount = 1
+            )
+        }
+
     override suspend fun loadDormantApps(minimumUnusedDays: Int): List<DormantAppItem> =
         withContext(Dispatchers.IO) {
             if (!hasUsageAccess()) return@withContext emptyList()

@@ -15,6 +15,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -60,6 +61,92 @@ class EnergyControlsViewModelTest {
 
         assertTrue(scheduler.stopped)
         assertFalse(settings.enabled.value)
+    }
+
+
+    @Test
+    fun enablingLiveTelemetryPersistsAndReflectsPreference() = runTest(dispatcher) {
+        val settings = FakeSettings()
+        val viewModel = EnergyControlsViewModel(settings, FakeScheduler(), FakeUsageStats(), FakeWakelockDiagnostics())
+        runCurrent()
+
+        viewModel.setLiveTelemetryEnabled(true)
+        runCurrent()
+
+        assertTrue(settings.liveTelemetry.value)
+        assertTrue(viewModel.uiState.value.isLiveTelemetryEnabled)
+    }
+
+    @Test
+    fun webhookTestRejectsBlankUrlBeforeAnyNetworkRequest() = runTest(dispatcher) {
+        val viewModel = EnergyControlsViewModel(FakeSettings(), FakeScheduler(), FakeUsageStats(), FakeWakelockDiagnostics())
+        runCurrent()
+        viewModel.testChargeWebhook()
+        runCurrent()
+        assertEquals("Webhook URL girilmedi.", viewModel.uiState.value.chargeWebhookLastResult)
+        assertFalse(viewModel.uiState.value.isTestingChargeWebhook)
+    }
+
+    @Test
+    fun webhookUrlPersistenceIsDebouncedAndOnlyLatestValueIsWritten() = runTest(dispatcher) {
+        val settings = FakeSettings()
+        val viewModel = EnergyControlsViewModel(settings, FakeScheduler(), FakeUsageStats(), FakeWakelockDiagnostics())
+        runCurrent()
+
+        viewModel.setChargeWebhookUrl("https://first.example/hook")
+        viewModel.setChargeWebhookUrl("https://second.example/hook")
+        runCurrent()
+        advanceTimeBy(349L)
+        runCurrent()
+        assertTrue(settings.webhookUrlWrites.isEmpty())
+
+        advanceTimeBy(1L)
+        runCurrent()
+        assertEquals(listOf("https://second.example/hook"), settings.webhookUrlWrites)
+        assertEquals("https://second.example/hook", settings.webhookUrl.value)
+    }
+
+    @Test
+    fun shizukuPackageActionRunsOnlyWhenServiceIsReady() = runTest(dispatcher) {
+        val diagnostics = FakeWakelockDiagnostics(access = WakelockAccessState.READY, forceStopResult = true)
+        val viewModel = EnergyControlsViewModel(FakeSettings(), FakeScheduler(), FakeUsageStats(), diagnostics)
+        runCurrent()
+        viewModel.refreshWakelockAccess()
+
+        viewModel.forceStopPackage("com.example.reader")
+        runCurrent()
+
+        assertEquals(listOf("com.example.reader"), diagnostics.forceStoppedPackages)
+        assertEquals("com.example.reader durduruldu.", viewModel.uiState.value.packageActionMessage)
+        assertEquals(null, viewModel.uiState.value.busyPackageName)
+    }
+
+    @Test
+    fun backgroundRestrictionUsesShizukuRepositoryWhenReady() = runTest(dispatcher) {
+        val diagnostics = FakeWakelockDiagnostics(access = WakelockAccessState.READY, forceStopResult = true)
+        val viewModel = EnergyControlsViewModel(FakeSettings(), FakeScheduler(), FakeUsageStats(), diagnostics)
+        runCurrent()
+        viewModel.refreshWakelockAccess()
+
+        viewModel.restrictBackground("com.example.reader")
+        runCurrent()
+
+        assertEquals(listOf("com.example.reader"), diagnostics.restrictedPackages)
+        assertEquals("com.example.reader için arka plan çalışması sınırlandı.", viewModel.uiState.value.packageActionMessage)
+    }
+
+    @Test
+    fun shizukuPackageActionIsBlockedWhenServiceIsNotReady() = runTest(dispatcher) {
+        val diagnostics = FakeWakelockDiagnostics(access = WakelockAccessState.SHIZUKU_NOT_RUNNING)
+        val viewModel = EnergyControlsViewModel(FakeSettings(), FakeScheduler(), FakeUsageStats(), diagnostics)
+        runCurrent()
+        viewModel.refreshWakelockAccess()
+
+        viewModel.forceStopPackage("com.example.reader")
+        runCurrent()
+
+        assertTrue(diagnostics.forceStoppedPackages.isEmpty())
+        assertTrue(viewModel.uiState.value.packageActionMessage?.contains("Shizuku hazır değil") == true)
     }
 
     @Test
@@ -188,6 +275,19 @@ class EnergyControlsViewModelTest {
         val target = MutableStateFlow(80)
         val alertSent = MutableStateFlow(false)
         override val monitoringEnabled: Flow<Boolean> = enabled
+        val liveTelemetry = MutableStateFlow(false)
+        override val liveTelemetryEnabled: Flow<Boolean> = liveTelemetry
+        val webhookEnabled = MutableStateFlow(false)
+        val webhookUrl = MutableStateFlow("")
+        val webhookMethod = MutableStateFlow("POST")
+        val webhookTriggered = MutableStateFlow(false)
+        val webhookLastResult = MutableStateFlow("")
+        val webhookUrlWrites = mutableListOf<String>()
+        override val chargeWebhookEnabled: Flow<Boolean> = webhookEnabled
+        override val chargeWebhookUrl: Flow<String> = webhookUrl
+        override val chargeWebhookMethod: Flow<String> = webhookMethod
+        override val chargeWebhookTriggered: Flow<Boolean> = webhookTriggered
+        override val chargeWebhookLastResult: Flow<String> = webhookLastResult
         override val chargeLimitEnabled: Flow<Boolean> = MutableStateFlow(false)
         override val chargeTargetPercent: Flow<Int> = target
         override val chargeTargetAlertSent: Flow<Boolean> = alertSent
@@ -204,6 +304,12 @@ class EnergyControlsViewModelTest {
         override val energyChangeMarkers: Flow<List<EnergyChangeMarker>> = MutableStateFlow(emptyList())
         override val batteryBaselineAtEpochMillis: Flow<Long> = MutableStateFlow(0L)
         override suspend fun setMonitoringEnabled(enabled: Boolean) { this.enabled.value = enabled }
+        override suspend fun setLiveTelemetryEnabled(enabled: Boolean) { liveTelemetry.value = enabled }
+        override suspend fun setChargeWebhookEnabled(enabled: Boolean) { webhookEnabled.value = enabled }
+        override suspend fun setChargeWebhookUrl(url: String) { webhookUrlWrites += url; webhookUrl.value = url }
+        override suspend fun setChargeWebhookMethod(method: String) { webhookMethod.value = method }
+        override suspend fun setChargeWebhookTriggered(triggered: Boolean) { webhookTriggered.value = triggered }
+        override suspend fun setChargeWebhookLastResult(result: String) { webhookLastResult.value = result }
         override suspend fun setChargeLimitEnabled(enabled: Boolean) = Unit
         override suspend fun setChargeTargetPercent(percent: Int) { target.value = percent.coerceIn(70, 100) }
         override suspend fun setChargeTargetAlertSent(sent: Boolean) { alertSent.value = sent }
@@ -232,16 +338,27 @@ class EnergyControlsViewModelTest {
 
     private class FakeWakelockDiagnostics(
         private val access: WakelockAccessState = WakelockAccessState.SHIZUKU_NOT_RUNNING,
-        private val result: WakelockDiagnosticsResult = WakelockDiagnosticsResult.Success(emptyList(), 1L)
+        private val result: WakelockDiagnosticsResult = WakelockDiagnosticsResult.Success(emptyList(), 1L),
+        private val forceStopResult: Boolean = false
     ) : WakelockDiagnosticsRepository {
         var readCount: Int = 0
             private set
+        val forceStoppedPackages = mutableListOf<String>()
+        val restrictedPackages = mutableListOf<String>()
 
         override fun currentAccessState(): WakelockAccessState = access
         override fun requestPermission(): Boolean = false
         override suspend fun readSinceLastCharge(): WakelockDiagnosticsResult {
             readCount++
             return result
+        }
+        override suspend fun forceStopPackage(packageName: String): Boolean {
+            forceStoppedPackages += packageName
+            return forceStopResult
+        }
+        override suspend fun restrictBackground(packageName: String): Boolean {
+            restrictedPackages += packageName
+            return forceStopResult
         }
     }
 

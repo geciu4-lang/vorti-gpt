@@ -40,6 +40,10 @@ class BatteryRepositoryImpl @Inject constructor(
         batterySampleDao.deleteAll()
     }
 
+    override suspend fun readCurrentSnapshot(): BatterySnapshot = withContext(Dispatchers.IO) {
+        dataSource.readSnapshot()
+    }
+
     override suspend fun refreshSnapshot(): BatterySnapshot = withContext(Dispatchers.IO) {
         val snapshot = dataSource.readSnapshot()
         batterySampleDao.insert(snapshot.toEntity())

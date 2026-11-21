@@ -16,6 +16,7 @@ import com.vortix.app.domain.repository.EnergySettingsRepository
 import com.vortix.app.domain.repository.BatteryRepository
 import com.vortix.app.domain.usecase.RefreshBatterySnapshotUseCase
 import com.vortix.app.widget.VortixBatteryWidgetProvider
+import com.vortix.app.domain.repository.ChargingProfileRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -27,7 +28,9 @@ class BatteryMonitoringWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val refreshBatterySnapshot: RefreshBatterySnapshotUseCase,
     private val settings: EnergySettingsRepository,
-    private val batteryRepository: BatteryRepository
+    private val batteryRepository: BatteryRepository,
+    private val webhookCoordinator: ChargeWebhookTriggerCoordinator,
+    private val chargingProfiles: ChargingProfileRepository
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -35,6 +38,7 @@ class BatteryMonitoringWorker @AssistedInject constructor(
             if (!settings.monitoringEnabled.first()) return Result.success()
 
             val snapshot = refreshBatterySnapshot()
+            chargingProfiles.recordSnapshot(snapshot)
             VortixBatteryWidgetProvider.updateAll(applicationContext)
             // Keep the raw history bounded; 180 days is ample for trend analysis and local privacy.
             batteryRepository.pruneHistory(System.currentTimeMillis() - 180L * 24L * 60L * 60L * 1000L)
@@ -46,13 +50,17 @@ class BatteryMonitoringWorker @AssistedInject constructor(
 
             val chargeLimitEnabled = settings.chargeLimitEnabled.first()
             val chargeTarget = settings.chargeTargetPercent.first()
+            val chargeTargetReached = isPluggedIn && isChargingOrFull && level != null && level >= chargeTarget
+            val chargeNotificationReached = chargeLimitEnabled && chargeTargetReached
             val chargeAlertSent = settings.chargeTargetAlertSent.first()
-            val chargeTargetReached = chargeLimitEnabled && isPluggedIn && isChargingOrFull &&
-                level != null && level >= chargeTarget
-            if (chargeTargetReached && !chargeAlertSent && notifyChargeTargetReached(level!!, chargeTarget)) {
+            if (chargeNotificationReached && !chargeAlertSent && notifyChargeTargetReached(level!!, chargeTarget)) {
                 settings.setChargeTargetAlertSent(true)
-            } else if ((!chargeTargetReached || !chargeLimitEnabled) && chargeAlertSent) {
+            } else if ((!chargeNotificationReached || !chargeLimitEnabled) && chargeAlertSent) {
                 settings.setChargeTargetAlertSent(false)
+            }
+
+            webhookCoordinator.onBatterySnapshot(snapshot)?.let { result ->
+                notifyWebhookResult(result.success, result.message)
             }
 
             val lowBatteryEnabled = settings.lowBatteryAlertEnabled.first()
@@ -120,6 +128,34 @@ class BatteryMonitoringWorker @AssistedInject constructor(
     }
 
 
+    private fun notifyWebhookResult(success: Boolean, message: String) {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                applicationContext, Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) return
+        val manager = applicationContext.getSystemService(NotificationManager::class.java) ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    WEBHOOK_CHANNEL_ID,
+                    "Vortix webhook otomasyonu",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply { description = "Akıllı priz ve Home Assistant webhook sonuçları" }
+            )
+        }
+        manager.notify(
+            WEBHOOK_NOTIFICATION_ID,
+            NotificationCompat.Builder(applicationContext, WEBHOOK_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
+                .setContentTitle(if (success) "Vortix · Şarj otomasyonu başarılı" else "Vortix · Şarj otomasyonu başarısız")
+                .setContentText(message.take(180))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .build()
+        )
+    }
+
     private fun notifyLowBattery(level: Int, threshold: Int): Boolean {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
                 applicationContext, Manifest.permission.POST_NOTIFICATIONS
@@ -186,6 +222,8 @@ class BatteryMonitoringWorker @AssistedInject constructor(
         const val LOW_BATTERY_NOTIFICATION_ID = 4103
         const val LOW_BATTERY_CHANNEL_ID = "vortix_low_battery"
         const val THERMAL_CHANNEL_ID = "vortix_thermal_alerts"
+        const val WEBHOOK_CHANNEL_ID = "vortix_webhook_automation"
+        const val WEBHOOK_NOTIFICATION_ID = 4104
         const val SEVERE_THERMAL_STATUS = 3
     }
 }

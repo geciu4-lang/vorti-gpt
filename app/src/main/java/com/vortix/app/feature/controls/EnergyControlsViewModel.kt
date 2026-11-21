@@ -6,11 +6,15 @@ import com.vortix.app.domain.repository.EnergyMonitorScheduler
 import com.vortix.app.domain.repository.EnergySettingsRepository
 import com.vortix.app.domain.repository.UsageStatsRepository
 import com.vortix.app.domain.repository.WakelockDiagnosticsRepository
+import com.vortix.app.platform.webhook.ChargeTargetWebhookManager
+import com.vortix.app.domain.analytics.ChargeWebhookUrlValidator
 import com.vortix.app.domain.model.WakelockAccessState
 import com.vortix.app.domain.model.WakelockDiagnosticsResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -24,7 +28,8 @@ class EnergyControlsViewModel @Inject constructor(
     private val settings: EnergySettingsRepository,
     private val monitorScheduler: EnergyMonitorScheduler,
     private val usageStats: UsageStatsRepository,
-    private val wakelockDiagnostics: WakelockDiagnosticsRepository
+    private val wakelockDiagnostics: WakelockDiagnosticsRepository,
+    private val webhookManager: ChargeTargetWebhookManager = ChargeTargetWebhookManager()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(EnergyControlsUiState())
@@ -32,6 +37,8 @@ class EnergyControlsViewModel @Inject constructor(
 
     // Capacity chips can be tapped rapidly. Keep the newest selection visible immediately,
     // serialize persistence, and skip stale writes that have not started yet.
+    private var webhookUrlSaveJob: Job? = null
+
     private val designCapacityWriteMutex = Mutex()
     private var designCapacityRequestSequence: Long = 0L
     private var designCapacityFeedbackSequence: Long = 0L
@@ -41,14 +48,35 @@ class EnergyControlsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val part1 = combine(
+            combine(
+                settings.chargeWebhookEnabled,
+                settings.chargeWebhookUrl,
+                settings.chargeWebhookMethod,
+                settings.chargeWebhookLastResult
+            ) { enabled, url, method, result ->
+                _uiState.update {
+                    it.copy(
+                        isChargeWebhookEnabled = enabled,
+                        chargeWebhookUrl = url,
+                        chargeWebhookMethod = method,
+                        chargeWebhookLastResult = result.takeIf(String::isNotBlank)
+                    )
+                }
+            }.collect { }
+        }
+        viewModelScope.launch {
+            val monitoringAndTelemetry = combine(
                 settings.monitoringEnabled,
+                settings.liveTelemetryEnabled
+            ) { monitoring, liveTelemetry -> monitoring to liveTelemetry }
+            val part1 = combine(
+                monitoringAndTelemetry,
                 settings.chargeLimitEnabled,
                 settings.chargeTargetPercent,
                 settings.lowBatteryAlertEnabled,
                 settings.lowBatteryThresholdPercent
-            ) { monitoring, chargeLimit, chargeTarget, lowBatAlert, lowBatThreshold ->
-                Part1(monitoring, chargeLimit, chargeTarget, lowBatAlert, lowBatThreshold)
+            ) { monitoringState, chargeLimit, chargeTarget, lowBatAlert, lowBatThreshold ->
+                Part1(monitoringState.first, monitoringState.second, chargeLimit, chargeTarget, lowBatAlert, lowBatThreshold)
             }
             val part2 = combine(
                 settings.thermalAlertEnabled,
@@ -63,6 +91,7 @@ class EnergyControlsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isMonitoringEnabled = p1.monitoring,
+                        isLiveTelemetryEnabled = p1.liveTelemetry,
                         isChargeLimitEnabled = p1.chargeLimit,
                         chargeTargetPercent = p1.chargeTarget,
                         isLowBatteryAlertEnabled = p1.lowBatAlert,
@@ -89,6 +118,83 @@ class EnergyControlsViewModel @Inject constructor(
                 throw cancelled
             } catch (_: Exception) {
                 _uiState.update { it.copy(message = "Ölçüm planı güncellenemedi.") }
+            }
+        }
+    }
+
+    fun setLiveTelemetryEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                settings.setLiveTelemetryEnabled(enabled)
+                _uiState.update {
+                    it.copy(message = if (enabled) "Canlı bildirim telemetrisi etkinleştirildi." else "Canlı bildirim telemetrisi kapatıldı.")
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { it.copy(message = "Canlı telemetri ayarı kaydedilemedi.") }
+            }
+        }
+    }
+
+    fun setChargeWebhookEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                if (enabled) {
+                    if (!_uiState.value.isMonitoringEnabled) monitorScheduler.start()
+                    settings.setMonitoringEnabled(true)
+                    settings.setChargeLimitEnabled(true)
+                }
+                settings.setChargeWebhookEnabled(enabled)
+                if (!enabled) settings.setChargeWebhookTriggered(false)
+                _uiState.update { it.copy(message = if (enabled) "Şarj hedefi webhook otomasyonu açıldı." else "Webhook otomasyonu kapatıldı.") }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { it.copy(message = "Webhook ayarı kaydedilemedi.") }
+            }
+        }
+    }
+
+    fun setChargeWebhookUrl(url: String) {
+        val safeUrl = url.take(2048)
+        _uiState.update { it.copy(chargeWebhookUrl = safeUrl) }
+        webhookUrlSaveJob?.cancel()
+        webhookUrlSaveJob = viewModelScope.launch {
+            // Text entry updates are debounced to avoid writing every keystroke to DataStore.
+            delay(350L)
+            runCatching { settings.setChargeWebhookUrl(safeUrl) }
+                .onFailure { _uiState.update { current -> current.copy(message = "Webhook URL kaydedilemedi.") } }
+        }
+    }
+
+    fun setChargeWebhookMethod(method: String) {
+        val safeMethod = if (method == "GET") "GET" else "POST"
+        _uiState.update { it.copy(chargeWebhookMethod = safeMethod) }
+        viewModelScope.launch { runCatching { settings.setChargeWebhookMethod(safeMethod) } }
+    }
+
+    fun testChargeWebhook() {
+        val current = _uiState.value
+        val validation = ChargeWebhookUrlValidator.validate(current.chargeWebhookUrl)
+        if (validation != null) {
+            _uiState.update { it.copy(chargeWebhookLastResult = validation) }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isTestingChargeWebhook = true) }
+            try {
+                val result = webhookManager.execute(
+                    current.chargeWebhookUrl,
+                    runCatching { ChargeTargetWebhookManager.Method.valueOf(current.chargeWebhookMethod) }
+                        .getOrDefault(ChargeTargetWebhookManager.Method.POST),
+                    test = true
+                )
+                _uiState.update { it.copy(isTestingChargeWebhook = false, chargeWebhookLastResult = result.message) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { it.copy(isTestingChargeWebhook = false, chargeWebhookLastResult = "Webhook test isteği başarısız.") }
             }
         }
     }
@@ -382,12 +488,46 @@ class EnergyControlsViewModel @Inject constructor(
         }
     }
 
+    fun forceStopPackage(packageName: String) = runPackageAction(packageName, restrict = false)
+
+    fun restrictBackground(packageName: String) = runPackageAction(packageName, restrict = true)
+
+    private fun runPackageAction(packageName: String, restrict: Boolean) {
+        if (_uiState.value.busyPackageName != null) return
+        if (_uiState.value.wakelockAccessState != WakelockAccessState.READY) {
+            _uiState.update { it.copy(packageActionMessage = "Shizuku hazır değil; uygulama ayarlarından işlem yapabilirsin.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(busyPackageName = packageName, packageActionMessage = null) }
+            try {
+                val success = if (restrict) wakelockDiagnostics.restrictBackground(packageName)
+                    else wakelockDiagnostics.forceStopPackage(packageName)
+                _uiState.update {
+                    it.copy(
+                        busyPackageName = null,
+                        packageActionMessage = if (success) {
+                            if (restrict) "$packageName için arka plan çalışması sınırlandı."
+                            else "$packageName durduruldu."
+                        } else "İşlem başarısız. Shizuku iznini ve hedef uygulamanın durumunu kontrol et."
+                    )
+                }
+                if (success) refreshUsageApps()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { it.copy(busyPackageName = null, packageActionMessage = "Uygulama işlemi tamamlanamadı.") }
+            }
+        }
+    }
+
     fun clearMessage() {
         _uiState.update { it.copy(message = null) }
     }
 
     private data class Part1(
         val monitoring: Boolean,
+        val liveTelemetry: Boolean,
         val chargeLimit: Boolean,
         val chargeTarget: Int,
         val lowBatAlert: Boolean,

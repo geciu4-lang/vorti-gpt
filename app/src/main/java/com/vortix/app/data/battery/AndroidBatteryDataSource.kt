@@ -98,8 +98,9 @@ class AndroidBatteryDataSource @Inject constructor(
                 )
             },
             screenInteractive = powerManager?.isInteractive,
+            // getCurrentThermalStatus() is API 29+. minSdk 26 devices remain supported.
             thermalStatus = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                powerManager?.currentThermalStatus
+                runCatching { powerManager?.getCurrentThermalStatus() }.getOrNull()
             } else null,
             powerSaveMode = powerManager?.isPowerSaveMode,
             deviceIdleMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

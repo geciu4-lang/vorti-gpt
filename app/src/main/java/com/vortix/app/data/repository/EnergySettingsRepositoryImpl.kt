@@ -22,6 +22,30 @@ class EnergySettingsRepositoryImpl @Inject constructor(
         prefs[MONITORING_ENABLED] ?: false
     }
 
+    override val liveTelemetryEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[LIVE_TELEMETRY_ENABLED] ?: false
+    }
+
+    override val chargeWebhookEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[CHARGE_WEBHOOK_ENABLED] ?: false
+    }
+
+    override val chargeWebhookUrl: Flow<String> = dataStore.data.map { prefs ->
+        prefs[CHARGE_WEBHOOK_URL].orEmpty()
+    }
+
+    override val chargeWebhookMethod: Flow<String> = dataStore.data.map { prefs ->
+        prefs[CHARGE_WEBHOOK_METHOD]?.takeIf { it == "GET" || it == "POST" } ?: "POST"
+    }
+
+    override val chargeWebhookTriggered: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[CHARGE_WEBHOOK_TRIGGERED] ?: false
+    }
+
+    override val chargeWebhookLastResult: Flow<String> = dataStore.data.map { prefs ->
+        prefs[CHARGE_WEBHOOK_LAST_RESULT].orEmpty()
+    }
+
     override val chargeLimitEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[CHARGE_LIMIT_ENABLED] ?: false
     }
@@ -81,6 +105,36 @@ class EnergySettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setMonitoringEnabled(enabled: Boolean) {
         dataStore.edit { it[MONITORING_ENABLED] = enabled }
+    }
+
+    override suspend fun setLiveTelemetryEnabled(enabled: Boolean) {
+        dataStore.edit { it[LIVE_TELEMETRY_ENABLED] = enabled }
+    }
+
+    override suspend fun setChargeWebhookEnabled(enabled: Boolean) {
+        dataStore.edit { it[CHARGE_WEBHOOK_ENABLED] = enabled }
+    }
+
+    override suspend fun setChargeWebhookUrl(url: String) {
+        dataStore.edit {
+            it[CHARGE_WEBHOOK_URL] = url.trim().take(2048)
+            it[CHARGE_WEBHOOK_TRIGGERED] = false
+        }
+    }
+
+    override suspend fun setChargeWebhookMethod(method: String) {
+        dataStore.edit {
+            it[CHARGE_WEBHOOK_METHOD] = if (method == "GET") "GET" else "POST"
+            it[CHARGE_WEBHOOK_TRIGGERED] = false
+        }
+    }
+
+    override suspend fun setChargeWebhookTriggered(triggered: Boolean) {
+        dataStore.edit { it[CHARGE_WEBHOOK_TRIGGERED] = triggered }
+    }
+
+    override suspend fun setChargeWebhookLastResult(result: String) {
+        dataStore.edit { it[CHARGE_WEBHOOK_LAST_RESULT] = result.take(240) }
     }
 
     override suspend fun setChargeLimitEnabled(enabled: Boolean) {
@@ -147,6 +201,12 @@ class EnergySettingsRepositoryImpl @Inject constructor(
 
     private companion object {
         val MONITORING_ENABLED = booleanPreferencesKey("monitoring_enabled")
+        val LIVE_TELEMETRY_ENABLED = booleanPreferencesKey("live_telemetry_enabled")
+        val CHARGE_WEBHOOK_ENABLED = booleanPreferencesKey("charge_webhook_enabled")
+        val CHARGE_WEBHOOK_URL = androidx.datastore.preferences.core.stringPreferencesKey("charge_webhook_url")
+        val CHARGE_WEBHOOK_METHOD = androidx.datastore.preferences.core.stringPreferencesKey("charge_webhook_method")
+        val CHARGE_WEBHOOK_TRIGGERED = booleanPreferencesKey("charge_webhook_triggered")
+        val CHARGE_WEBHOOK_LAST_RESULT = androidx.datastore.preferences.core.stringPreferencesKey("charge_webhook_last_result")
         val CHARGE_LIMIT_ENABLED = booleanPreferencesKey("charge_limit_enabled")
         val CHARGE_TARGET_PERCENT = intPreferencesKey("charge_target_percent")
         val CHARGE_TARGET_ALERT_SENT = booleanPreferencesKey("charge_target_alert_sent")

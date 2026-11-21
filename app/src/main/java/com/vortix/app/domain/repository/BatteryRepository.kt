@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.Flow
 interface BatteryRepository {
     fun observeLatestSnapshot(): Flow<BatterySnapshot?>
     suspend fun refreshSnapshot(): BatterySnapshot
+    /** Reads a fresh platform snapshot without persisting it to the Room history. */
+    suspend fun readCurrentSnapshot(): BatterySnapshot = refreshSnapshot()
     fun observeHistory(sinceEpochMillis: Long): Flow<List<BatterySnapshot>>
     fun observeRecentSnapshots(limit: Int): Flow<List<BatterySnapshot>>
     suspend fun loadHistory(sinceEpochMillis: Long): List<BatterySnapshot>

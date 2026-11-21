@@ -1,8 +1,8 @@
 package com.vortix.app.feature.insights
-import com.vortix.app.platform.UsageAccessSettingsLauncher
 
 import android.net.Uri
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.Intent
 import android.widget.Toast
 import android.provider.Settings
@@ -41,14 +41,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortix.app.domain.model.EvidenceConfidence
+import com.vortix.app.domain.model.WakelockAccessState
+import com.vortix.app.feature.controls.EnergyControlsViewModel
+import com.vortix.app.feature.controls.UsageAppRow
+import com.vortix.app.platform.UsageAccessSettingsLauncher
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
 @Composable
-fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
+fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel, controlsViewModel: EnergyControlsViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val controlsState by controlsViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -69,14 +74,18 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
     LaunchedEffect(Unit) {
         viewModel.refreshNetworkUsage()
         viewModel.refreshDormantApps()
+        controlsViewModel.refreshUsageApps()
+        controlsViewModel.refreshWakelockAccess()
     }
 
     // Re-check app-op permission after the user returns from Android Settings.
-    DisposableEffect(lifecycleOwner, viewModel) {
+    DisposableEffect(lifecycleOwner, viewModel, controlsViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshNetworkUsage()
                 viewModel.refreshDormantApps()
+                controlsViewModel.refreshUsageApps()
+                controlsViewModel.refreshWakelockAccess()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -94,6 +103,126 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        InsightCard(title = "GECE BEKLEME ANALİZİ · VAMPIRE DRAIN") {
+            if (!state.hasUsageAccess) {
+                Text(
+                    "En etkin uygulama sinyalini göstermek için Android Kullanım erişimi izni gerekir. Bu sinyal pil başına mAh tüketimi değildir.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (state.nightStandbySessions.isEmpty()) {
+                Text(
+                    "En az 4 saat kesintisiz ekran kapalı, fişten çekilmiş ve düzenli örneklenmiş bir bekleme oturumu henüz bulunamadı. Arka plan telemetri planını açarak ölçüm geçmişi biriktirin.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                state.nightStandbySessions.asReversed().forEach { session ->
+                    val startText = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                        .format(Date(session.startEpochMillis))
+                    val endText = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(session.endEpochMillis))
+                    Text("$startText – $endText", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    MetricLine("Bekleme süresi", formatDuration(session.durationMillis))
+                    MetricLine("Pil kaybı", "-${session.batteryLossPercent}% · ${String.format(Locale.getDefault(), "%.2f", session.lossPercentPerHour)}% / saat")
+                    MetricLine(
+                        "Tüketim",
+                        session.consumedMah?.let { "${if (session.consumedMahIsEstimated) "≈" else ""}${formatMah(it)} mAh" } ?: "mAh verisi kullanılamıyor"
+                    )
+                    session.mostActiveAppName?.let { appName ->
+                        Text(
+                            "Oturumda en çok kullanım sinyali: $appName" +
+                                (session.mostActiveAppForegroundMillis?.let { " · ${formatDuration(it)}" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                    Text(
+                        "${session.sampleCount} pil örneği. Uygulama sinyali UsageStats ön plan süresidir; uygulama başına gerçek mAh tüketimi değildir.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        InsightCard(title = "VORTIX RADAR · UYGULAMA AKSİYONLARI") {
+            Text(
+                "Kullanım ve ağ sinyallerine göre uygulamaları incele. Shizuku hazırsa yalnızca üçüncü taraf uygulamalarda durdurma veya arka plan kısıtlama işlemlerini uygula.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (!controlsState.hasUsageAccess) {
+                Button(onClick = { openUsageAccessSettings(context) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Kullanım erişimi iznini aç")
+                }
+            } else if (controlsState.isLoadingUsage) {
+                Text("Uygulama kullanım ve ağ istatistikleri taranıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if (controlsState.topApps.isEmpty()) {
+                Text("Gösterilecek uygulama kullanım kaydı bulunamadı.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                controlsState.topApps.forEach { app ->
+                    UsageAppRow(
+                        app = app,
+                        showShizukuActions = controlsState.wakelockAccessState == WakelockAccessState.READY && isThirdPartyPackage(context, app.packageName),
+                        isBusy = controlsState.busyPackageName == app.packageName,
+                        onForceStop = { controlsViewModel.forceStopPackage(app.packageName) },
+                        onRestrictBackground = { controlsViewModel.restrictBackground(app.packageName) },
+                        onOpenSettings = {
+                            runCatching {
+                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:${app.packageName}")
+                                })
+                            }.onFailure {
+                                Toast.makeText(context, "Uygulama ayarları açılamadı.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    )
+                }
+            }
+            controlsState.packageActionMessage?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+            }
+            when (controlsState.wakelockAccessState) {
+                WakelockAccessState.PERMISSION_REQUIRED -> Button(
+                    onClick = controlsViewModel::requestWakelockPermission,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Shizuku iznini iste") }
+                WakelockAccessState.READY -> OutlinedButton(
+                    onClick = controlsViewModel::refreshWakelockDiagnostics,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !controlsState.isLoadingWakelocks
+                ) { Text(if (controlsState.isLoadingWakelocks) "Wakelock verileri okunuyor…" else "Wakelock kayıtlarını tara") }
+                WakelockAccessState.UNSUPPORTED_VERSION -> Text(
+                    "Wakelock işlemleri için Shizuku API v11 veya üzeri gerekir.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                WakelockAccessState.SHIZUKU_NOT_RUNNING -> Text(
+                    "Shizuku / Sui bağlı değil. Uygulama ayarlarına yönlendirme kullanılabilir.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            controlsState.wakelockErrorMessage?.let { error ->
+                Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            if (controlsState.wakelockRecords.isNotEmpty()) {
+                Text(
+                    "SON ŞARJDAN BERİ · ${controlsState.wakelockRecords.size} WAKELOCK KAYDI",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                controlsState.wakelockRecords.take(8).forEach { record ->
+                    Text("UID ${record.uid} · ${record.name} · ${record.preferredDurationMillis / 1000}s", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            OutlinedButton(
+                onClick = controlsViewModel::refreshUsageApps,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Radar listesini yenile") }
         }
 
         state.summary?.let { summary ->
@@ -357,6 +486,13 @@ private fun UsageAccessSettingsButton(context: Context, label: String) {
     ) {
         Text(label)
     }
+}
+
+private fun isThirdPartyPackage(context: Context, packageName: String): Boolean {
+    val info = runCatching { context.packageManager.getApplicationInfo(packageName, android.content.pm.PackageManager.MATCH_ALL) }.getOrNull()
+        ?: return false
+    val systemFlags = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+    return (info.flags and systemFlags) == 0 && packageName != context.packageName
 }
 
 private fun openUsageAccessSettings(context: Context) {
