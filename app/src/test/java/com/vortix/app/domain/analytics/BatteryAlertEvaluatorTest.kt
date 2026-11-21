@@ -13,6 +13,21 @@ class BatteryAlertEvaluatorTest {
         assertFalse(BatteryAlertEvaluator.hasActiveAlert(snapshot(), false, 42, false, 20, false, 80))
     }
 
+    @Test fun normal25DegreeSnapshotWithNoneThermalStatusHasNoAlertReasons() {
+        val normal = snapshot(temperature = 25.0).copy(thermalStatus = SystemThermalStatus.NONE)
+        assertTrue(BatteryAlertEvaluator.activeAlertReasons(
+            normal, false, 42, false, 20, false, 80
+        ).isEmpty())
+    }
+
+    @Test fun alertBadgeReasonExplainsReachedChargeTarget() {
+        val reasons = BatteryAlertEvaluator.activeAlertReasons(
+            snapshot(level = 80, status = BatteryStatus.CHARGING, source = PluggedSource.AC),
+            false, 42, false, 20, true, 80
+        )
+        assertTrue(reasons.any { it.contains("Şarj hedefi") })
+    }
+
     @Test fun moderateSystemThermalStatusTriggersAlertWithoutUserThreshold() {
         assertTrue(BatteryAlertEvaluator.hasActiveAlert(
             snapshot().copy(thermalStatus = SystemThermalStatus.MODERATE), false, 42, false, 20, false, 80

@@ -1,4 +1,4 @@
-# VORTIX 7.1.0 — Live telemetry & charging intelligence candidate
+# VORTIX 7.1.2 — UI integration & reliability candidate
 
 VORTIX is an on-device Android battery monitoring and analysis application built with Kotlin, Jetpack Compose, Material 3, MVVM and Clean Architecture. This archive is a **working source candidate**, not a release-certified build.
 
@@ -8,7 +8,7 @@ VORTIX is an on-device Android battery monitoring and analysis application built
 - **Smart Health:** evidence-gated battery capacity estimation, confidence levels, design-capacity calibration, replacement baseline and charge-session analysis.
 - **VORTIX Radar:** screen-on/off discharge rates, personal screen-off anomaly detection, thermal exposure, device-wide network context and dormant-app observations.
 - **Drain Radar 0.3.1 core:** today's foreground-use time plus mobile/Wi-Fi traffic from Android's rolling 24-hour query interval, grouped by UID. Launcher apps with observed traffic can appear even without today's foreground use. Shared UIDs are explicitly marked; network traffic is not converted into app-level mAh or battery percentages.
-- **Drain Radar 0.3.2 Wakelock diagnostics:** optional Shizuku/Sui UserService reads Android Batterystats `wl`/`awl` check-in rows. The UI shows UID/tag partial-wakelock durations/counts only; no energy/mAh attribution or automatic process/lock control is performed.
+- **Drain Radar 0.3.2 Wakelock diagnostics:** optional Shizuku/Sui UserService reads Android Batterystats `wl`/`awl` check-in rows. The UI shows UID/tag partial-wakelock durations/counts; separate, explicitly user-triggered package actions can force-stop or restrict background execution for eligible third-party packages. No energy/mAh attribution is inferred.
 - **Energy Controls:** user-configured charge-target, low-battery and thermal notifications; optional background sampling; Usage Access handoff.
 - **Live Charging Telemetry:** optional ongoing, silent low-priority notification with battery-side power, current, temperature and charge-target state; Android 13+ notification permission is requested.
 - **Charging Benchmark:** 30-second battery-side current/voltage/temperature sampling with a heuristic A+/A/B/C comparison score. This is not USB adapter output or cable certification.
@@ -35,7 +35,7 @@ VORTIX is an on-device Android battery monitoring and analysis application built
 | JVM target | 17 |
 | Application ID | `com.vortix.app` |
 | Shizuku API / Provider | 13.1.5 (optional advanced diagnostics) |
-| Version | `7.1.0` (`versionCode` 16) |
+| Version | `7.1.2` (`versionCode` 18) |
 
 The app module uses AGP 9 built-in Kotlin; the external `org.jetbrains.kotlin.android` plugin is not applied. The Compose compiler plugin remains pinned to the same Kotlin version.
 
@@ -64,7 +64,7 @@ GitHub Actions runs the unit tests and creates a Debug APK artifact on pushes to
 - Eco Guard applies an earlier battery-saver recommendation threshold in Power Advisor; it does not silently change Android system settings.
 - Dormant-app detection is an observation based on UsageStats and launcher visibility. It does not force-stop, uninstall or hibernate apps.
 - Network usage is traffic context, not battery drain or mAh attribution. Per-app entries use Android UID-level counters; packages sharing a UID share the same aggregate. The network query interval is 24 hours, but Android returns discrete hour-scale buckets and does not interpolate partially overlapping boundary buckets. Foreground time covers the current local day.
-- Wakelock diagnostics are optional and require a running compatible Shizuku/Sui service plus explicit user approval. Availability is checked at runtime. The shell/root UserService runs a bounded, read-only `dumpsys batterystats --charged --checkin` query and returns only `wl`/`awl` rows; output size and execution time are bounded. It never resets batterystats or terminates applications.
+- Wakelock diagnostics and package actions are optional and require a running compatible Shizuku/Sui service plus explicit user approval. Availability is checked at runtime. The UserService runs a bounded `dumpsys batterystats --charged --checkin` query and returns only `wl`/`awl` rows; output size and execution time are bounded. Separate package operations validate the package identifier and execute an explicit force-stop or `RUN_ANY_IN_BACKGROUND` AppOps restriction. The app never resets batterystats.
 - Wakelock duration and count are operating-system diagnostics, not battery-energy measurements. `partialTimeMillis` is apportioned time; check-in v21+ may provide actual total duration, and v22+ may provide background partial duration. Aggregate `awl` rows do not contain a lock count; the UI marks that value unavailable rather than displaying zero.
 - Capacity and health are estimates. Health percentage is withheld until the configured design reference and sufficient measurement confidence are available.
 - Unsupported Android/device metrics remain unavailable rather than being fabricated.
@@ -72,4 +72,4 @@ GitHub Actions runs the unit tests and creates a Debug APK artifact on pushes to
 
 ## Release gate
 
-This 7.1.0 source candidate adds the dynamic alert badge, live telemetry foreground service, 30-second charging benchmark and night standby analysis. Isolated JVM checks pass for the 13 pure Kotlin feature tests, and the changed benchmark ViewModel has been checked separately with lightweight platform stubs. The full Gradle test task, Kotlin/Compose compilation, KSP/Hilt/Room generation, APK assembly and Firebase Test Lab run have **not** been completed for this exact revision because the Gradle wrapper distribution could not be downloaded in the current environment. Do not publish this candidate until GitHub Actions succeeds and representative device tests pass. See `docs/FEATURES_7.1.0.md`, `BUILD_VALIDATION.md`, `docs/VIDEO_REMEDIATION_REPORT.md`, `docs/DRAIN_RADAR_0.3.2_WAKELOCK_NOTES.md` and `docs/SHIZUKU_SETUP.md`.
+This 7.1.2 candidate integrates the 7.1.1 thermal, Shizuku, webhook, charger-profile and telemetry features into the visible Compose destinations. The Controls tab surfaces the live telemetry switch, 30-second benchmark and adapter profiles near the top; webhook URL/method/test controls are visible even while automatic triggering is disabled. Radar surfaces the night standby analysis and offers a direct route to enable background sampling. The dashboard badge now shows a reasoned UYARI state or a green NORMAL state. Two targeted alert-evaluator tests were added, and a local Kotlin/JVM smoke run passed 4/4 assertions. The full Gradle test task, Kotlin/Compose compilation, KSP/Hilt/Room generation, APK assembly and Firebase Test Lab run have **not** been completed for this exact revision because the Gradle wrapper distribution could not be downloaded in the current environment. Do not publish this candidate until GitHub Actions succeeds and representative device tests pass. See `docs/UI_INTEGRATION_7.1.2.md`, `docs/FEATURES_7.1.0.md`, `BUILD_VALIDATION.md`, `docs/VIDEO_REMEDIATION_REPORT.md`, `docs/DRAIN_RADAR_0.3.2_WAKELOCK_NOTES.md` and `docs/SHIZUKU_SETUP.md`.

@@ -72,7 +72,7 @@ fun DashboardScreen(
     val onTabSelected: (Int) -> Unit = { nextTab -> selectedTab = nextTab.coerceIn(0, 2) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
 
-    val isAlert = remember(
+    val alertReasons = remember(
         snapshot,
         controlsState.thermalThresholdCelsius,
         controlsState.lowBatteryThresholdPercent,
@@ -81,7 +81,7 @@ fun DashboardScreen(
         controlsState.isChargeLimitEnabled,
         controlsState.chargeTargetPercent
     ) {
-        BatteryAlertEvaluator.hasActiveAlert(
+        BatteryAlertEvaluator.activeAlertReasons(
             snapshot = snapshot,
             thermalAlertEnabled = controlsState.isThermalAlertEnabled,
             thermalThresholdCelsius = controlsState.thermalThresholdCelsius,
@@ -91,6 +91,7 @@ fun DashboardScreen(
             chargeTargetPercent = controlsState.chargeTargetPercent
         )
     }
+    val isAlert = alertReasons.isNotEmpty()
 
     if (confirmClear) {
         AlertDialog(
@@ -132,9 +133,11 @@ fun DashboardScreen(
             ) {
                 AmbientTopBar(
                     isAlert,
+                    snapshot != null,
                     uiState.isRefreshing,
                     snapshot?.temperatureCelsius,
-                    snapshot?.thermalStatus
+                    snapshot?.thermalStatus,
+                    alertReasons.firstOrNull()
                 )
                 uiState.errorMessage?.let {
                     GlassContainer(cornerRadius = 16) {
@@ -180,7 +183,11 @@ fun DashboardScreen(
                         else -> EmptyState { viewModel.refresh() }
                     }
                         1 -> EnergyControlsPanel(energyControlsViewModel, benchmarkViewModel, chargingProfileViewModel)
-                        else -> BatteryInsightsPanel(insightsViewModel, energyControlsViewModel)
+                        else -> BatteryInsightsPanel(
+                            insightsViewModel,
+                            energyControlsViewModel,
+                            onOpenControls = { onTabSelected(1) }
+                        )
                     }
                 }
             }
@@ -191,9 +198,11 @@ fun DashboardScreen(
 @Composable
 private fun AmbientTopBar(
     isAlert: Boolean,
+    isStatusKnown: Boolean,
     isRefreshing: Boolean,
     temperatureCelsius: Double?,
-    thermalStatus: Int?
+    thermalStatus: Int?,
+    alertReason: String?
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
@@ -217,7 +226,11 @@ private fun AmbientTopBar(
                     Text(
                         "TERMAL $thermalLabel  ·  KİMYASAL AŞINMA ×${String.format(java.util.Locale.US, "%.1f", wear.multiplier)} ${wear.label.uppercase(java.util.Locale.getDefault())}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (wear.multiplier >= 1.5 || com.vortix.app.domain.analytics.SystemThermalStatus.isWarning(thermalStatus)) VortixError else VortixOnSurfaceVariant
+                        color = when {
+                            com.vortix.app.domain.analytics.SystemThermalStatus.isWarning(thermalStatus) || wear.multiplier >= 2.4 -> VortixError
+                            wear.multiplier >= 1.5 -> VortixTertiary
+                            else -> VortixOnSurfaceVariant
+                        }
                     )
                     Text(
                         "Yaklaşık termal gösterge; pil ömrü ölçümü değildir.",
@@ -227,19 +240,40 @@ private fun AmbientTopBar(
                 }
             }
         }
-        if (isAlert) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = VortixError.copy(alpha = 0.16f),
-                border = BorderStroke(1.dp, VortixError.copy(alpha = 0.5f))
+        val badgeColor = when {
+            !isStatusKnown -> VortixOnSurfaceVariant
+            isAlert -> VortixError
+            else -> VortixPrimary
+        }
+        Surface(
+            modifier = Modifier.widthIn(max = 148.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = badgeColor.copy(alpha = 0.16f),
+            border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.55f))
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    "UYARI",
+                    when {
+                        !isStatusKnown -> "ÖLÇÜLÜYOR"
+                        isAlert -> "UYARI"
+                        else -> "NORMAL"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = VortixError,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    color = badgeColor
                 )
+                if (isAlert && !alertReason.isNullOrBlank()) {
+                    Text(
+                        alertReason,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = VortixError,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }

@@ -38,7 +38,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -50,7 +49,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -75,19 +73,16 @@ fun EnergyControlsPanel(
     val profileState by chargingProfileViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, viewModel, benchmarkViewModel) {
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-            benchmarkViewModel.refreshChargeState()
-            chargingProfileViewModel.refreshChargeState()
-        }
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
+    // Keep charging-dependent cards live even when the user plugs/unplugs the phone
+    // without leaving the Controls tab. The loop pauses while the app is not RESUMED.
+    LaunchedEffect(lifecycleOwner, benchmarkViewModel, chargingProfileViewModel) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
                 benchmarkViewModel.refreshChargeState()
                 chargingProfileViewModel.refreshChargeState()
+                delay(5_000L)
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     var pendingLiveTelemetryPermission by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -147,6 +142,59 @@ fun EnergyControlsPanel(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
+        // High-value 7.1.2 UI integrations stay above the legacy tuning cards so users can find them immediately.
+        GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22, highlighted = state.isLiveTelemetryEnabled) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("CANLI BİLDİRİM TELEMETRİSİ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Bildirim panelinde güç, akım, batarya sıcaklığı ve hedefe kalan yüzdeyi yaklaşık 5 saniyede bir gösterir.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = state.isLiveTelemetryEnabled,
+                        onCheckedChange = { enabled ->
+                            if (!enabled) {
+                                viewModel.setLiveTelemetryEnabled(false)
+                            } else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                                    context, Manifest.permission.POST_NOTIFICATIONS
+                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                pendingLiveTelemetryPermission = true
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                viewModel.setLiveTelemetryEnabled(true)
+                            }
+                        }
+                    )
+                }
+                if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.POST_NOTIFICATIONS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            pendingLiveTelemetryPermission = true
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Canlı bildirim için izin ver") }
+                }
+                Text(
+                    if (state.isLiveTelemetryEnabled) "Bildirim servisi etkinleştirildiğinde kalıcı ve sessiz bir bildirim gösterilir."
+                    else "Kapalı · Bildirim servisi çalışmıyor.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (state.isLiveTelemetryEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        ChargingBenchmarkCard(benchmarkViewModel)
+        ChargingProfileCard(chargingProfileViewModel, profileState)
 
         AnimatedContent(
             targetState = state.message?.let { state.designCapacityFeedbackId to it },
@@ -259,8 +307,7 @@ fun EnergyControlsPanel(
                     }
                 }
 
-                AnimatedVisibility(visible = state.isChargeLimitEnabled) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text("Webhook Tetikleyici", fontWeight = FontWeight.SemiBold)
@@ -275,64 +322,55 @@ fun EnergyControlsPanel(
                                 onCheckedChange = viewModel::setChargeWebhookEnabled
                             )
                         }
-                        if (state.isChargeWebhookEnabled) {
-                            OutlinedTextField(
-                                value = state.chargeWebhookUrl,
-                                onValueChange = viewModel::setChargeWebhookUrl,
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                label = { Text("HTTPS Webhook URL") },
-                                placeholder = { Text("https://home.example/api/webhook/…") }
+                        OutlinedTextField(
+                            value = state.chargeWebhookUrl,
+                            onValueChange = viewModel::setChargeWebhookUrl,
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("HTTPS Webhook URL") },
+                            placeholder = { Text("https://home.example/api/webhook/…") }
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilterChip(
+                                selected = state.chargeWebhookMethod == "GET",
+                                onClick = { viewModel.setChargeWebhookMethod("GET") },
+                                label = { Text("GET") }
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(
-                                    selected = state.chargeWebhookMethod == "GET",
-                                    onClick = { viewModel.setChargeWebhookMethod("GET") },
-                                    label = { Text("GET") }
-                                )
-                                FilterChip(
-                                    selected = state.chargeWebhookMethod == "POST",
-                                    onClick = { viewModel.setChargeWebhookMethod("POST") },
-                                    label = { Text("POST") }
-                                )
-                                Spacer(Modifier.weight(1f))
-                                OutlinedButton(
-                                    onClick = viewModel::testChargeWebhook,
-                                    enabled = !state.isTestingChargeWebhook && state.chargeWebhookUrl.isNotBlank(),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) { Text(if (state.isTestingChargeWebhook) "Gönderiliyor…" else "Test Et") }
-                            }
-                            Text(
-                                "Test Et gerçek uç noktayı çağırır; Home Assistant otomasyonunu tetikleyebilir.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.tertiary
+                            FilterChip(
+                                selected = state.chargeWebhookMethod == "POST",
+                                onClick = { viewModel.setChargeWebhookMethod("POST") },
+                                label = { Text("POST") }
                             )
-                            state.chargeWebhookLastResult?.let { result ->
-                                Text(
-                                    result,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (result.contains("başarılı", true) || result.contains("HTTP 2"))
-                                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                )
-                            }
+                            Spacer(Modifier.weight(1f))
+                            OutlinedButton(
+                                onClick = viewModel::testChargeWebhook,
+                                enabled = !state.isTestingChargeWebhook && state.chargeWebhookUrl.isNotBlank(),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text(if (state.isTestingChargeWebhook) "Gönderiliyor…" else "Test Et") }
+                        }
+                        Text(
+                            if (state.isChargeWebhookEnabled) "Otomatik tetikleme açık: şarj hedefi algılandığında webhook çağrılır."
+                            else "Otomasyon kapalı: URL'yi kaydedebilir ve Test Et ile bağlantıyı deneyebilirsiniz.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (state.isChargeWebhookEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "Test Et gerçek uç noktayı çağırır; Home Assistant otomasyonunu tetikleyebilir. WorkManager nedeniyle otomatik çağrı tam anlık olmayabilir. Yalnızca HTTPS desteklenir.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                        state.chargeWebhookLastResult?.let { result ->
                             Text(
-                                "Otomatik tetikleme, arka plan pil izleme örneklemesiyle yapılır; WorkManager nedeniyle tam anlık olmayabilir. Ağ güvenliği için yalnızca HTTPS desteklenir.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                result,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (result.contains("başarılı", true) || result.contains("HTTP 2"))
+                                    MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                             )
                         }
-                    }
-                }
-
-                if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
-                        context, Manifest.permission.POST_NOTIFICATIONS
-                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    OutlinedButton(
-                        onClick = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) { Text("Bildirim iznini etkinleştir") }
                 }
             }
         }
@@ -495,10 +533,6 @@ fun EnergyControlsPanel(
             }
         }
 
-        // Charging adapter + cable benchmark (battery-side electrical sampling).
-        ChargingBenchmarkCard(benchmarkViewModel)
-        ChargingProfileCard(chargingProfileViewModel, profileState)
-
         // 5. Background Telemetry & Eco Guard Card
         GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -518,37 +552,6 @@ fun EnergyControlsPanel(
                     Switch(
                         checked = state.isMonitoringEnabled,
                         onCheckedChange = viewModel::setMonitoringEnabled
-                    )
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = "Canlı Bildirim Telemetrisi",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Bildirim panelinde güç, akım, sıcaklık ve şarj hedefini 5 saniyede bir günceller. Sessiz ve kalıcı bildirim kullanır.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = state.isLiveTelemetryEnabled,
-                        onCheckedChange = { enabled ->
-                            if (!enabled) {
-                                viewModel.setLiveTelemetryEnabled(false)
-                            } else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
-                                    context, Manifest.permission.POST_NOTIFICATIONS
-                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                            ) {
-                                pendingLiveTelemetryPermission = true
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                viewModel.setLiveTelemetryEnabled(true)
-                            }
-                        }
                     )
                 }
 
@@ -719,17 +722,6 @@ private fun AdapterProfileComparisonColumn(profile: ChargingProfile, modifier: M
 @Composable
 private fun ChargingBenchmarkCard(viewModel: ChargingBenchmarkViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner, state.isRunning) {
-        if (!state.isRunning) {
-            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                while (true) {
-                    viewModel.refreshChargeState()
-                    delay(5_000L)
-                }
-            }
-        }
-    }
     GlassContainer(modifier = Modifier.fillMaxWidth(), cornerRadius = 22, highlighted = state.isRunning) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("ADAPTÖR HIZ TESTİ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

@@ -51,7 +51,11 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 
 @Composable
-fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel, controlsViewModel: EnergyControlsViewModel) {
+fun BatteryInsightsPanel(
+    viewModel: BatteryInsightsViewModel,
+    controlsViewModel: EnergyControlsViewModel,
+    onOpenControls: () -> Unit = {}
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val controlsState by controlsViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -145,6 +149,17 @@ fun BatteryInsightsPanel(viewModel: BatteryInsightsViewModel, controlsViewModel:
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+            if (!controlsState.isMonitoringEnabled) {
+                OutlinedButton(onClick = onOpenControls, modifier = Modifier.fillMaxWidth()) {
+                    Text("Gece analizi için arka plan ölçümünü aç")
+                }
+            } else {
+                Text(
+                    "Arka plan örnekleme planı etkin. Oturumların oluşması için yeterli süre ve düzenli pil örnekleri gerekir.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
 
