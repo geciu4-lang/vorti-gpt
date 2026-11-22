@@ -16,7 +16,7 @@ object VortixGlassColors {
 
     val TextPrimary = Color(0xFFF5F7FA)
     val TextMuted = Color(0xFF9AA4B2)
-    val SpecularBright = Color.White.copy(alpha = 0.18f)
+    val SpecularBright = Color.White.copy(alpha = 0.45f)
     val SpecularDim = Color.White.copy(alpha = 0.04f)
 }
 
@@ -27,8 +27,8 @@ val VortixSurfaceVariant = Color(0xFF20242D)
 val VortixSurfaceElevated = Color(0xFF252A34)
 
 // Frosted surfaces use translucent charcoal fills and a specular edge gradient.
-val GlassSurfaceTop = Color(0x9E161A23)
-val GlassSurfaceBottom = Color(0x8812161F)
+val GlassSurfaceTop = Color(0x581E2638)
+val GlassSurfaceBottom = Color(0x40121724)
 val GlassBorderHighlight = VortixGlassColors.SpecularBright
 val GlassBorderSubtle = VortixGlassColors.SpecularDim
 val GlassPillActive = VortixGlassColors.Emerald.copy(alpha = 0.22f)

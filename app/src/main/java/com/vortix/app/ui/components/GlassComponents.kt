@@ -128,10 +128,10 @@ fun AmbientMeshBackground(
             )
         ) {
             val scroll = scrollProvider()
-            val radius = size.maxDimension * 0.55f
+            val radius = size.maxDimension * 0.78f
             val upperRight = Offset(size.width, size.height * 0.04f - scroll * 0.12f)
             val lowerLeft = Offset(0f, size.height * 0.96f - scroll * 0.07f)
-            val alpha = if (useBlur) 0.30f else 0.26f
+            val alpha = if (useBlur) 0.46f else 0.42f
             drawCircle(
                 brush = Brush.radialGradient(
                     0f to VortixGlassColors.Coral.copy(alpha = alpha),
